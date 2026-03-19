@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { Activity, Bell, FileText, Home, Settings } from "lucide-react";
 
 export type NavView =
@@ -21,10 +21,14 @@ const navItems: { id: NavView; icon: React.ElementType; label: string }[] = [
 const THEME = {
   activeColor: "#AB1738",
   inactiveColor: "#54565B",
+  highContrastInactive: "#3A3A3C",
   barBg: "rgba(255,255,255,0.72)",
+  barBgFallback: "rgba(250,250,252,0.96)",
   barBorder: "rgba(188,149,91,0.18)",
+  barBorderFallback: "rgba(188,149,91,0.28)",
   barShadow: "0 2px 20px rgba(78,11,21,0.05), 0 8px 40px rgba(0,0,0,0.04)",
   bubbleBg: "rgba(255,255,255,0.65)",
+  bubbleBgFallback: "rgba(255,255,255,0.98)",
   bubbleBorder: "rgba(188,149,91,0.15)",
   bubbleShadow: "0 1px 6px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9)",
   crescentBg: "rgba(188,149,91,0.35)",
@@ -34,6 +38,8 @@ const THEME = {
     "linear-gradient(to bottom, rgba(255,255,255,0.35), transparent)",
   iridescentRim:
     "conic-gradient(from 0deg, rgba(171,23,56,0.10), rgba(188,149,91,0.08), rgba(230,213,181,0.06), rgba(205,166,122,0.08), rgba(84,86,91,0.06), rgba(171,23,56,0.10))",
+  fallbackTopHighlight:
+    "linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(255,255,255,0.0))",
 } as const;
 
 interface LiquidGlassNavProps {
@@ -50,18 +56,46 @@ type BubblePosition = {
   height: number;
 };
 
+function supportsBackdropFilter() {
+  if (typeof window === "undefined" || typeof CSS === "undefined" || typeof CSS.supports !== "function") {
+    return false;
+  }
+  return (
+    CSS.supports("backdrop-filter: blur(1px)") ||
+    CSS.supports("-webkit-backdrop-filter: blur(1px)")
+  );
+}
+
 export function LiquidGlassNav({
   currentView,
   onChangeView,
   notificationCount = 0,
   layoutMode = "overlay",
 }: LiquidGlassNavProps) {
+  const prefersReducedMotion = useReducedMotion();
+  const reduceMotion = prefersReducedMotion === true;
   const navContainerRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<Map<NavView, HTMLButtonElement>>(new Map());
   const prevViewRef = useRef<NavView>(currentView);
   const isFirstRender = useRef(true);
   const squishRef = useRef<HTMLDivElement>(null);
   const [bubblePos, setBubblePos] = useState<BubblePosition | null>(null);
+  const [hasBackdrop, setHasBackdrop] = useState(true);
+  const [highContrast, setHighContrast] = useState(false);
+
+  useEffect(() => {
+    setHasBackdrop(supportsBackdropFilter());
+
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mediaQuery = window.matchMedia("(prefers-contrast: more)");
+    const applyContrast = () => setHighContrast(mediaQuery.matches);
+    applyContrast();
+    mediaQuery.addEventListener?.("change", applyContrast);
+
+    return () => {
+      mediaQuery.removeEventListener?.("change", applyContrast);
+    };
+  }, []);
 
   const measureButton = useCallback((viewId: NavView): BubblePosition | null => {
     const button = buttonRefs.current.get(viewId);
@@ -88,7 +122,7 @@ export function LiquidGlassNav({
     const distance = Math.abs(currentIndex - previousIndex);
     setBubblePos(position);
 
-    if (!isFirstRender.current && distance > 0 && squishRef.current) {
+    if (!reduceMotion && !isFirstRender.current && distance > 0 && squishRef.current) {
       const scaleX = 1 + Math.min(distance * 0.14, 0.38);
       const scaleY = 1 - Math.min(distance * 0.07, 0.18);
 
@@ -109,7 +143,7 @@ export function LiquidGlassNav({
 
     prevViewRef.current = currentView;
     isFirstRender.current = false;
-  }, [currentView, measureButton]);
+  }, [currentView, measureButton, reduceMotion]);
 
   useEffect(() => {
     const refresh = () => {
@@ -118,11 +152,15 @@ export function LiquidGlassNav({
     };
 
     window.addEventListener("resize", refresh);
+    window.addEventListener("orientationchange", refresh);
+    window.addEventListener("pageshow", refresh);
     window.visualViewport?.addEventListener("resize", refresh, { passive: true });
     window.visualViewport?.addEventListener("scroll", refresh, { passive: true });
 
     return () => {
       window.removeEventListener("resize", refresh);
+      window.removeEventListener("orientationchange", refresh);
+      window.removeEventListener("pageshow", refresh);
       window.visualViewport?.removeEventListener("resize", refresh);
       window.visualViewport?.removeEventListener("scroll", refresh);
     };
@@ -147,24 +185,50 @@ export function LiquidGlassNav({
     [],
   );
 
+  const iconColor = useMemo(() => {
+    if (highContrast) return THEME.highContrastInactive;
+    return THEME.inactiveColor;
+  }, [highContrast]);
+
+  const navContainerStyle = useMemo<React.CSSProperties>(() => {
+    const background = hasBackdrop ? THEME.barBg : THEME.barBgFallback;
+    const border = hasBackdrop ? THEME.barBorder : THEME.barBorderFallback;
+
+    return {
+      background,
+      backdropFilter: hasBackdrop ? "blur(60px) saturate(1.8)" : "none",
+      WebkitBackdropFilter: hasBackdrop ? "blur(60px) saturate(1.8)" : "none",
+      border: `0.5px solid ${border}`,
+      boxShadow: THEME.barShadow,
+      transition: reduceMotion
+        ? "background 0.15s linear, border-color 0.15s linear"
+        : "background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease",
+      isolation: "isolate",
+    };
+  }, [hasBackdrop, reduceMotion]);
+
+  const bubbleStyle = useMemo<React.CSSProperties>(() => {
+    return {
+      background: hasBackdrop ? THEME.bubbleBg : THEME.bubbleBgFallback,
+      backdropFilter: hasBackdrop ? "blur(25px) brightness(1.08)" : "none",
+      WebkitBackdropFilter: hasBackdrop ? "blur(25px) brightness(1.08)" : "none",
+      border: `0.5px solid ${THEME.bubbleBorder}`,
+      boxShadow: THEME.bubbleShadow,
+      willChange: "transform",
+    };
+  }, [hasBackdrop]);
+
   const navCore = (
     <div
       ref={navContainerRef}
       data-debug-id="liquid-nav-core"
       data-debug-nav-mode={layoutMode}
       className="relative flex items-center gap-0 rounded-full px-2 py-1 overflow-visible pointer-events-auto"
-      style={{
-        background: THEME.barBg,
-        backdropFilter: "blur(60px) saturate(1.8)",
-        WebkitBackdropFilter: "blur(60px) saturate(1.8)",
-        border: `0.5px solid ${THEME.barBorder}`,
-        boxShadow: THEME.barShadow,
-        transition: "background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease",
-      }}
+      style={navContainerStyle}
     >
       <div
         className="absolute inset-x-3 top-[2px] h-[45%] rounded-full pointer-events-none"
-        style={{ background: THEME.specularHighlight }}
+        style={{ background: hasBackdrop ? THEME.specularHighlight : THEME.fallbackTopHighlight }}
       />
 
       {bubblePos && (
@@ -177,35 +241,29 @@ export function LiquidGlassNav({
             width: bubblePos.width,
             height: bubblePos.height,
           }}
-          transition={{
-            type: "spring",
-            stiffness: 240,
-            damping: 24,
-            mass: 0.85,
-          }}
+          transition={
+            reduceMotion
+              ? { duration: 0.14, ease: "easeOut" }
+              : { type: "spring", stiffness: 250, damping: 25, mass: 0.82 }
+          }
         >
           <div
             ref={squishRef}
             className="absolute inset-0 rounded-full"
-            style={{
-              background: THEME.bubbleBg,
-              backdropFilter: "blur(25px) brightness(1.08)",
-              WebkitBackdropFilter: "blur(25px) brightness(1.08)",
-              border: `0.5px solid ${THEME.bubbleBorder}`,
-              boxShadow: THEME.bubbleShadow,
-              willChange: "transform",
-            }}
+            style={bubbleStyle}
           >
-            <div
-              className="absolute inset-0 rounded-[inherit] pointer-events-none"
-              style={{
-                background: THEME.iridescentRim,
-                mask: "linear-gradient(black, black) content-box, linear-gradient(black, black)",
-                maskComposite: "exclude",
-                WebkitMaskComposite: "xor",
-                padding: "2px",
-              }}
-            />
+            {hasBackdrop && (
+              <div
+                className="absolute inset-0 rounded-[inherit] pointer-events-none"
+                style={{
+                  background: THEME.iridescentRim,
+                  mask: "linear-gradient(black, black) content-box, linear-gradient(black, black)",
+                  maskComposite: "exclude",
+                  WebkitMaskComposite: "xor",
+                  padding: "2px",
+                }}
+              />
+            )}
             <div
               className="absolute inset-x-3 top-[1px] h-[40%] rounded-full pointer-events-none"
               style={{ background: THEME.specularBubble }}
@@ -219,12 +277,16 @@ export function LiquidGlassNav({
         const Icon = item.icon;
 
         return (
-          <button
+          <motion.button
             key={item.id}
             ref={setButtonRef(item.id)}
             data-id={item.id}
             onClick={() => onChangeView(item.id)}
-            className="relative z-10 flex flex-1 flex-col items-center gap-1.5 rounded-[20px] py-3 active:scale-[0.98] transition-transform duration-200 overflow-visible"
+            aria-label={item.label}
+            aria-current={isActive ? "page" : undefined}
+            whileTap={reduceMotion ? undefined : { scale: 0.965, y: 0.35 }}
+            transition={reduceMotion ? { duration: 0.08 } : { type: "spring", stiffness: 540, damping: 30, mass: 0.6 }}
+            className="relative z-10 flex flex-1 flex-col items-center justify-center gap-1.5 rounded-[20px] py-3 min-h-[62px] overflow-visible"
           >
             <div
               className="absolute bottom-[5px] left-1/2 -translate-x-1/2 pointer-events-none"
@@ -243,13 +305,16 @@ export function LiquidGlassNav({
               <Icon
                 size={24}
                 style={{
-                  color: isActive ? THEME.activeColor : THEME.inactiveColor,
-                  strokeWidth: isActive ? 2.35 : 1.65,
-                  transition: "color 0.3s ease, stroke-width 0.3s ease",
+                  color: isActive ? THEME.activeColor : iconColor,
+                  strokeWidth: isActive ? 2.35 : 1.7,
+                  transition: reduceMotion
+                    ? "color 0.12s linear, stroke-width 0.12s linear"
+                    : "color 0.28s ease, stroke-width 0.28s ease",
                 }}
               />
               {item.id === "notificaciones" && notificationCount > 0 && !isActive && (
-                <div
+                <motion.div
+                  layout
                   className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] rounded-full px-1 flex items-center justify-center pointer-events-none"
                   style={{
                     background: "#EF4444",
@@ -262,21 +327,21 @@ export function LiquidGlassNav({
                   >
                     {notificationCount > 99 ? "99+" : notificationCount}
                   </span>
-                </div>
+                </motion.div>
               )}
             </div>
 
             <span
               className="relative z-10 text-[11px] whitespace-nowrap pointer-events-none"
               style={{
-                color: isActive ? THEME.activeColor : THEME.inactiveColor,
+                color: isActive ? THEME.activeColor : iconColor,
                 fontWeight: isActive ? 700 : 500,
-                transition: "color 0.3s ease",
+                transition: reduceMotion ? "color 0.12s linear" : "color 0.28s ease",
               }}
             >
               {item.label}
             </span>
-          </button>
+          </motion.button>
         );
       })}
     </div>
