@@ -73,7 +73,7 @@ export function MonitoringDashboard() {
           await fetchServerMonitoring();
           loadMonitoring();
         }}
-        className="flex-1 min-h-0 px-4 space-y-2.5 pb-3"
+        className="flex-1 min-h-0 px-4 space-y-2.5 pb-6"
       >
         {filtered.map((mon) => (
           <div

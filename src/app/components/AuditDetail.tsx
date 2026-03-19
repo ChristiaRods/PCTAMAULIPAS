@@ -486,7 +486,7 @@ export function AuditDetail() {
     : (item as Reporte911).conteos.evidencias;
 
   return (
-    <div className="h-full bg-[#F2F2F7] flex flex-col">
+    <div className="h-full bg-[#F2F2F7] flex flex-col pb-8">
       <AppHeader title="Detalle del Evento" />
 
       {/* ═══ Original Post Card ═══ */}

@@ -1215,7 +1215,6 @@ export function SupervisorNotifications() {
         currentView={navView}
         onChangeView={setNavView}
         notificationCount={navView === "notificaciones" ? 0 : unreadNotifCount}
-        layoutMode="inline"
       />
     </div>
   );
