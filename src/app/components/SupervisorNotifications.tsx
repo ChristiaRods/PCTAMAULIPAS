@@ -982,12 +982,17 @@ export function SupervisorNotifications() {
   const navigate = useNavigate();
   const [lightboxData, setLightboxData] = useState<LightboxData | null>(null);
   const [navView, setNavViewRaw] = useState<NavView>(_savedNavView);
-  const feedScrollRef = useRef<HTMLDivElement | null>(null);
+  const homeScrollRef = useRef<HTMLDivElement | null>(null);
+  const reportesScrollRef = useRef<HTMLDivElement | null>(null);
+  const monitoreoScrollRef = useRef<HTMLDivElement | null>(null);
   const notificationsScrollRef = useRef<HTMLDivElement | null>(null);
-  const didRestoreInitialScrollRef = useRef(false);
 
   const getScrollContainer = useCallback((view: NavView) => {
-    return view === "notificaciones" ? notificationsScrollRef.current : feedScrollRef.current;
+    if (view === "home") return homeScrollRef.current;
+    if (view === "reportes") return reportesScrollRef.current;
+    if (view === "monitoreo") return monitoreoScrollRef.current;
+    if (view === "notificaciones") return notificationsScrollRef.current;
+    return null;
   }, []);
 
   const restoreScrollForView = useCallback((view: NavView) => {
@@ -1049,12 +1054,8 @@ export function SupervisorNotifications() {
   }, [restoreScrollForView]);
 
   useEffect(() => {
-    if (didRestoreInitialScrollRef.current) return;
-    const target = getScrollContainer(navView);
-    if (!target) return;
-    didRestoreInitialScrollRef.current = true;
     restoreScrollForView(navView);
-  }, [navView, getScrollContainer, restoreScrollForView]);
+  }, [navView, restoreScrollForView]);
 
   useEffect(() => {
     const target = getScrollContainer(navView);
@@ -1164,8 +1165,22 @@ export function SupervisorNotifications() {
     ? "Notificaciones"
     : "Configuración";
 
-  /* Show feed for home/reportes/monitoreo */
-  const showFeed = navView === "home" || navView === "reportes" || navView === "monitoreo";
+  const feedTabs: NavView[] = ["home", "reportes", "monitoreo"];
+  const isFeedView = navView === "home" || navView === "reportes" || navView === "monitoreo";
+
+  const getFeedForView = useCallback((view: NavView) => {
+    if (view === "home") return allFeedItems;
+    if (view === "reportes") return allFeedItems.filter((p) => p.type === "reporte911");
+    if (view === "monitoreo") return allFeedItems.filter((p) => p.type === "monitoreo");
+    return allFeedItems;
+  }, [allFeedItems]);
+
+  const getFeedContainerRef = (view: NavView) => {
+    if (view === "home") return homeScrollRef;
+    if (view === "reportes") return reportesScrollRef;
+    if (view === "monitoreo") return monitoreoScrollRef;
+    return homeScrollRef;
+  };
 
   return (
     <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
@@ -1179,107 +1194,108 @@ export function SupervisorNotifications() {
         />
       )}
 
-      {/* ═══ Feed Views (home / reportes / monitoreo) ═══ */}
-      {showFeed && (
-        <PullToRefresh
-          onRefresh={async () => {
-            await fetchServerReports();
-            loadFromCache();
-          }}
-          className="flex-1 min-h-0"
-          containerRef={feedScrollRef}
-        >
-          {/* ═══ 1. BANNER — Modo Solo Lectura (sólido) ═══ */}
-          <div className="mx-4 mt-3 mb-3 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-[#FFF1F3] border border-[#FECDD3]">
-            <Eye className="w-5 h-5 text-[#AB1738] shrink-0" strokeWidth={2} />
-            <span className="text-[15px] text-[#AB1738]">Modo Supervisor — Solo Lectura</span>
-            {unreadNotifCount > 0 && (
-              <span className="ml-auto text-[13px] bg-red-500 text-white px-2.5 py-1 rounded-full tabular-nums">
-                {unreadNotifCount} nuevas
-              </span>
-            )}
-          </div>
+      {/* Feed Views (home / reportes / monitoreo) */}
+      <div className={isFeedView ? "flex-1 min-h-0" : "hidden"}>
+        {feedTabs.map((view) => {
+          const filtered = getFeedForView(view);
+          const isActiveFeedTab = navView === view;
 
-          {/* ═══ 2. STATS BAR — Resumen ejecutivo ═══ */}
-          <div className="px-4 mb-3">
-            <div className="flex gap-2">
-              {/* Activos */}
-              <div
-                className="flex-1 rounded-xl px-3 py-3 bg-white border border-[#D1D1D6]"
-                style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                  <span className="text-[13px] text-[#636366]">Activos</span>
-                </div>
-                <span className="text-[22px] text-[#1C1C1E] tabular-nums">{activeCount}</span>
-              </div>
-              {/* Cerrados Hoy */}
-              <div
-                className="flex-1 rounded-xl px-3 py-3 bg-white border border-[#D1D1D6]"
-                style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" strokeWidth={2} />
-                  <span className="text-[13px] text-[#636366]">Cerrados</span>
-                </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-[22px] text-[#1C1C1E] tabular-nums">{closedToday}</span>
-                  <span className="text-[13px] text-[#8E8E93]">hoy</span>
-                </div>
-              </div>
-              {/* Monitoreos */}
-              <div
-                className="flex-1 rounded-xl px-3 py-3 bg-white border border-[#D1D1D6]"
-                style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <BarChart3 className="w-3.5 h-3.5 text-blue-500" strokeWidth={2} />
-                  <span className="text-[13px] text-[#636366]">Monitoreos</span>
-                </div>
-                <span className="text-[22px] text-[#1C1C1E] tabular-nums">{monitorCount}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* ═══ FEED ═══ */}
-          <div className="flex-1 flex flex-col gap-2">
-            {/* ── Separador de fecha ── */}
-            <div className="flex items-center gap-3 px-4 mb-0 mt-1">
-              <div className="flex-1 h-px bg-[#D1D1D6]" />
-              <span className="text-[13px] text-[#8E8E93]">Hoy, 5 de marzo 2026</span>
-              <div className="flex-1 h-px bg-[#D1D1D6]" />
-            </div>
-
-            {filtered.map((item) => (
-              <FeedCard key={item.id} item={item} onOpen={() => navigate(`/supervisor/${item.id}`)} onImageClick={() => openLightbox(item)} />
-            ))}
-
-            {/* ── Estado vacío ── */}
-            {filtered.length === 0 && (
-              <div className="text-center py-16 px-4">
-                <Activity className="w-10 h-10 text-[#8E8E93] mx-auto mb-3" strokeWidth={1.5} />
-                <p className="text-[16px] text-[#48484A] mb-1">No hay actividad en esta categoría</p>
-                <p className="text-[14px] text-[#8E8E93]">Selecciona otra sección en el menú</p>
-              </div>
-            )}
-
-            {/* ── End of feed indicator ── */}
-            {filtered.length > 0 && (
-              <div className="flex items-center justify-center py-6">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-px bg-[#D1D1D6]" />
-                  <span className="text-[12px] text-[#C7C7CC]" style={{ fontWeight: 400 }}>
-                    No hay más publicaciones
+          return (
+            <PullToRefresh
+              key={view}
+              onRefresh={async () => {
+                await fetchServerReports();
+                loadFromCache();
+              }}
+              className={isActiveFeedTab ? "h-full min-h-0" : "hidden h-full min-h-0"}
+              containerRef={getFeedContainerRef(view)}
+            >
+              {/* 1. Banner */}
+              <div className="mx-4 mt-3 mb-3 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-[#FFF1F3] border border-[#FECDD3]">
+                <Eye className="w-5 h-5 text-[#AB1738] shrink-0" strokeWidth={2} />
+                <span className="text-[15px] text-[#AB1738]">Modo Supervisor — Solo Lectura</span>
+                {unreadNotifCount > 0 && (
+                  <span className="ml-auto text-[13px] bg-red-500 text-white px-2.5 py-1 rounded-full tabular-nums">
+                    {unreadNotifCount} nuevas
                   </span>
-                  <div className="w-6 h-px bg-[#D1D1D6]" />
+                )}
+              </div>
+
+              {/* 2. Stats */}
+              <div className="px-4 mb-3">
+                <div className="flex gap-2">
+                  <div
+                    className="flex-1 rounded-xl px-3 py-3 bg-white border border-[#D1D1D6]"
+                    style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                      <span className="text-[13px] text-[#636366]">Activos</span>
+                    </div>
+                    <span className="text-[22px] text-[#1C1C1E] tabular-nums">{activeCount}</span>
+                  </div>
+                  <div
+                    className="flex-1 rounded-xl px-3 py-3 bg-white border border-[#D1D1D6]"
+                    style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" strokeWidth={2} />
+                      <span className="text-[13px] text-[#636366]">Cerrados</span>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-[22px] text-[#1C1C1E] tabular-nums">{closedToday}</span>
+                      <span className="text-[13px] text-[#8E8E93]">hoy</span>
+                    </div>
+                  </div>
+                  <div
+                    className="flex-1 rounded-xl px-3 py-3 bg-white border border-[#D1D1D6]"
+                    style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <BarChart3 className="w-3.5 h-3.5 text-blue-500" strokeWidth={2} />
+                      <span className="text-[13px] text-[#636366]">Monitoreos</span>
+                    </div>
+                    <span className="text-[22px] text-[#1C1C1E] tabular-nums">{monitorCount}</span>
+                  </div>
                 </div>
               </div>
-            )}
-          </div>
-        </PullToRefresh>
-      )}
 
+              {/* Feed */}
+              <div className="flex-1 flex flex-col gap-2">
+                <div className="flex items-center gap-3 px-4 mb-0 mt-1">
+                  <div className="flex-1 h-px bg-[#D1D1D6]" />
+                  <span className="text-[13px] text-[#8E8E93]">Hoy, 5 de marzo 2026</span>
+                  <div className="flex-1 h-px bg-[#D1D1D6]" />
+                </div>
+
+                {filtered.map((item) => (
+                  <FeedCard key={item.id} item={item} onOpen={() => navigate(`/supervisor/${item.id}`)} onImageClick={() => openLightbox(item)} />
+                ))}
+
+                {filtered.length === 0 && (
+                  <div className="text-center py-16 px-4">
+                    <Activity className="w-10 h-10 text-[#8E8E93] mx-auto mb-3" strokeWidth={1.5} />
+                    <p className="text-[16px] text-[#48484A] mb-1">No hay actividad en esta categoría</p>
+                    <p className="text-[14px] text-[#8E8E93]">Selecciona otra sección en el menú</p>
+                  </div>
+                )}
+
+                {filtered.length > 0 && (
+                  <div className="flex items-center justify-center py-6">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-px bg-[#D1D1D6]" />
+                      <span className="text-[12px] text-[#C7C7CC]" style={{ fontWeight: 400 }}>
+                        No hay más publicaciones
+                      </span>
+                      <div className="w-6 h-px bg-[#D1D1D6]" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </PullToRefresh>
+          );
+        })}
+      </div>
       {/* ═══ Image Lightbox ═══ */}
       {lightboxData && (
         <ImageLightbox data={lightboxData} onClose={() => setLightboxData(null)} />
@@ -1294,3 +1310,4 @@ export function SupervisorNotifications() {
     </div>
   );
 }
+
