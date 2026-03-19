@@ -38,6 +38,16 @@ const THEME = {
   },
 };
 
+function isIOSStandaloneMode() {
+  if (typeof window === "undefined") return false;
+  const ua = window.navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  if (!isIOS) return false;
+  const mediaStandalone = window.matchMedia("(display-mode: standalone)").matches;
+  const iosStandalone = (window.navigator as typeof window.navigator & { standalone?: boolean }).standalone === true;
+  return mediaStandalone || iosStandalone;
+}
+
 interface LiquidGlassNavProps {
   currentView: NavView;
   onChangeView: (view: NavView) => void;
@@ -57,6 +67,7 @@ export function LiquidGlassNav({
   const isFirstRender = useRef(true);
   const squishRef = useRef<HTMLDivElement>(null);
   const t = THEME.light;
+  const isIOSStandalone = isIOSStandaloneMode();
 
   /* ─── Bubble position ─── */
   const [bubblePos, setBubblePos] = useState<{ left: number; width: number; top: number; height: number } | null>(null);
@@ -146,9 +157,9 @@ export function LiquidGlassNav({
       data-debug-nav-mode={layoutMode}
       className="relative flex items-center gap-0 px-2 py-1 rounded-full overflow-visible pointer-events-auto"
       style={{
-        background: t.barBg,
-        backdropFilter: "blur(60px) saturate(1.8)",
-        WebkitBackdropFilter: "blur(60px) saturate(1.8)",
+        background: isIOSStandalone ? "#F7F7FA" : t.barBg,
+        backdropFilter: isIOSStandalone ? "none" : "blur(60px) saturate(1.8)",
+        WebkitBackdropFilter: isIOSStandalone ? "none" : "blur(60px) saturate(1.8)",
         border: `0.5px solid ${t.barBorder}`,
         boxShadow: t.barShadow,
         transition:
@@ -187,9 +198,9 @@ export function LiquidGlassNav({
               ref={squishRef}
               className="absolute inset-0 rounded-full"
               style={{
-                background: t.bubbleBg,
-                backdropFilter: "blur(25px) brightness(1.08)",
-                WebkitBackdropFilter: "blur(25px) brightness(1.08)",
+                background: isIOSStandalone ? "#FFFFFF" : t.bubbleBg,
+                backdropFilter: isIOSStandalone ? "none" : "blur(25px) brightness(1.08)",
+                WebkitBackdropFilter: isIOSStandalone ? "none" : "blur(25px) brightness(1.08)",
                 border: `0.5px solid ${t.bubbleBorder}`,
                 boxShadow: t.bubbleShadow,
                 overflow: "visible",
@@ -309,7 +320,8 @@ export function LiquidGlassNav({
       data-debug-nav-mode={layoutMode}
       className="fixed left-4 right-4 z-50 overflow-visible pointer-events-none"
       style={{
-        bottom: "var(--pc-nav-bottom-offset, 0px)",
+        bottom:
+          "calc(var(--pc-nav-bottom-offset, 0px) - var(--pc-safe-bottom-excluded-delta, 0px))",
       }}
     >
       {navCore}

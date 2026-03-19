@@ -60,8 +60,11 @@
   --pc-safe-left-raw: 0px;
   --pc-safe-top-effective: 0px;
   --pc-safe-bottom-effective: 0px;
+  --pc-safe-bottom-excluded-delta: 0px;
   --pc-safe-mode: browser;
   --pc-safe-viewport-excludes-insets: 0;
+  --pc-safe-viewport-excludes-top: 0;
+  --pc-safe-viewport-excludes-bottom: 0;
   --pc-nav-bottom-offset: 0px;
 }
 
