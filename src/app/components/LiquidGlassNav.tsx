@@ -18,6 +18,9 @@ const navItems: { id: NavView; icon: React.ElementType; label: string }[] = [
   { id: "menu", icon: Settings, label: "Ajustes" },
 ];
 
+const coreNavItems = navItems.filter((item) => item.id !== "menu");
+const satelliteMenuItem = navItems.find((item) => item.id === "menu")!;
+
 const THEME = {
   activeColor: "#AB1738",
   inactiveColor: "#54565B",
@@ -119,14 +122,19 @@ export function LiquidGlassNav({
 
   useEffect(() => {
     const position = measureButton(currentView);
-    if (!position) return;
+    if (!position) {
+      setBubblePos(null);
+      prevViewRef.current = currentView;
+      isFirstRender.current = false;
+      return;
+    }
 
-    const previousIndex = navItems.findIndex((item) => item.id === prevViewRef.current);
-    const currentIndex = navItems.findIndex((item) => item.id === currentView);
+    const previousIndex = coreNavItems.findIndex((item) => item.id === prevViewRef.current);
+    const currentIndex = coreNavItems.findIndex((item) => item.id === currentView);
     const distance = Math.abs(currentIndex - previousIndex);
     setBubblePos(position);
 
-    if (!reduceMotion && !isFirstRender.current && distance > 0 && squishRef.current) {
+    if (!reduceMotion && !isFirstRender.current && distance > 0 && previousIndex >= 0 && currentIndex >= 0 && squishRef.current) {
       const scaleX = 1 + Math.min(distance * 0.22, 0.58);
       const scaleY = 1 - Math.min(distance * 0.12, 0.24);
 
@@ -222,6 +230,19 @@ export function LiquidGlassNav({
     };
   }, [hasBackdrop]);
 
+  const satelliteButtonStyle = useMemo<React.CSSProperties>(() => {
+    return {
+      background: hasBackdrop ? "rgba(255,255,255,0.56)" : "rgba(246,246,248,0.94)",
+      backdropFilter: hasBackdrop ? "blur(34px) saturate(1.95)" : "none",
+      WebkitBackdropFilter: hasBackdrop ? "blur(34px) saturate(1.95)" : "none",
+      border: hasBackdrop
+        ? "0.5px solid rgba(188,149,91,0.26)"
+        : "0.5px solid rgba(188,149,91,0.34)",
+      boxShadow:
+        "0 10px 24px rgba(56,8,18,0.20), 0 2px 8px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.52)",
+    };
+  }, [hasBackdrop]);
+
   const navCore = (
     <div
       ref={navContainerRef}
@@ -301,7 +322,7 @@ export function LiquidGlassNav({
         </motion.div>
       )}
 
-      {navItems.map((item) => {
+      {coreNavItems.map((item) => {
         const isActive = currentView === item.id;
         const Icon = item.icon;
 
@@ -392,6 +413,61 @@ export function LiquidGlassNav({
     </div>
   );
 
+  const isSatelliteActive = currentView === satelliteMenuItem.id;
+  const SatelliteIcon = satelliteMenuItem.icon;
+
+  const navShell = (
+    <div className="flex items-end gap-2.5 px-0 pointer-events-none">
+      <div className="flex-1 min-w-0 pointer-events-auto">{navCore}</div>
+      <motion.button
+        data-id={satelliteMenuItem.id}
+        aria-label={satelliteMenuItem.label}
+        aria-current={isSatelliteActive ? "page" : undefined}
+        onClick={() => onChangeView(satelliteMenuItem.id)}
+        whileTap={reduceMotion ? undefined : { scale: 0.94, y: 0.8 }}
+        transition={reduceMotion ? { duration: 0.08 } : { type: "spring", stiffness: 500, damping: 28, mass: 0.62 }}
+        className="relative z-20 mb-1.5 h-[68px] w-[68px] shrink-0 rounded-full overflow-hidden pointer-events-auto"
+        style={satelliteButtonStyle}
+      >
+        <div
+          className="absolute inset-[1px] rounded-full pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(to bottom, rgba(255,255,255,0.42), rgba(255,255,255,0.05) 55%, rgba(255,255,255,0.00))",
+          }}
+        />
+        <div
+          className="absolute inset-0 rounded-full pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(110% 90% at 50% 8%, rgba(255,255,255,0.32), rgba(255,255,255,0.05) 62%, transparent 100%)",
+          }}
+        />
+        <motion.div
+          className="relative z-10 h-full w-full flex items-center justify-center"
+          initial={false}
+          animate={reduceMotion
+            ? { scale: 1, y: 0 }
+            : isSatelliteActive
+              ? { scale: 1.06, y: -0.5 }
+              : { scale: 1, y: 0 }}
+          transition={reduceMotion ? { duration: 0.1 } : { type: "spring", stiffness: 380, damping: 24, mass: 0.6 }}
+        >
+          <SatelliteIcon
+            size={31}
+            style={{
+              color: isSatelliteActive ? THEME.activeColor : iconColor,
+              strokeWidth: isSatelliteActive ? 2.3 : 1.9,
+              transition: reduceMotion
+                ? "color 0.12s linear, stroke-width 0.12s linear"
+                : "color 0.28s ease, stroke-width 0.28s ease",
+            }}
+          />
+        </motion.div>
+      </motion.button>
+    </div>
+  );
+
   if (layoutMode === "inline") {
     return (
       <div
@@ -399,7 +475,7 @@ export function LiquidGlassNav({
         data-debug-nav-mode={layoutMode}
         className="relative z-50 px-4 overflow-visible pointer-events-none"
       >
-        {navCore}
+        {navShell}
       </div>
     );
   }
@@ -412,7 +488,7 @@ export function LiquidGlassNav({
       data-debug-reduce-motion={reduceMotion ? "1" : "0"}
       className="fixed bottom-6 left-4 right-4 z-50 overflow-visible pointer-events-none"
     >
-      {navCore}
+      {navShell}
     </div>
   );
 
