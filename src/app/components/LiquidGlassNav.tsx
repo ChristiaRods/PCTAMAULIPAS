@@ -135,22 +135,29 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
 
   const nav = (
     <div
-      className="fixed left-4 right-4 z-50 overflow-visible"
-      style={{ bottom: "env(safe-area-inset-bottom, 0px)" }}
+      className="fixed inset-x-0 bottom-0 z-50 pointer-events-none"
+      style={{
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        background:
+          "linear-gradient(to top, rgba(242,242,247,0.96) 0%, rgba(242,242,247,0.72) 42%, rgba(242,242,247,0) 100%)",
+      }}
     >
       <div
-        ref={navContainerRef}
-        className="relative flex items-center gap-0 px-2 py-1 rounded-full overflow-visible"
-        style={{
-          background: t.barBg,
-          backdropFilter: "blur(60px) saturate(1.8)",
-          WebkitBackdropFilter: "blur(60px) saturate(1.8)",
-          border: `0.5px solid ${t.barBorder}`,
-          boxShadow: t.barShadow,
-          transition:
-            "background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease",
-        }}
+        className="px-4 pb-2 pointer-events-none"
       >
+        <div
+          ref={navContainerRef}
+          className="relative flex items-center gap-0 px-2 py-1 rounded-full overflow-visible pointer-events-auto"
+          style={{
+            background: t.barBg,
+            backdropFilter: "blur(60px) saturate(1.8)",
+            WebkitBackdropFilter: "blur(60px) saturate(1.8)",
+            border: `0.5px solid ${t.barBorder}`,
+            boxShadow: t.barShadow,
+            transition:
+              "background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease",
+          }}
+        >
         {/* Top specular highlight */}
         <div
           className="absolute inset-x-3 top-[2px] h-[45%] rounded-full pointer-events-none"
@@ -283,6 +290,7 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
             </button>
           );
         })}
+        </div>
       </div>
     </div>
   );
