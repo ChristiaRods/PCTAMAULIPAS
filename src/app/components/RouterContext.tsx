@@ -505,6 +505,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
   return (
     <div
       ref={containerRef}
+      data-debug-id="router-shell"
       className="relative"
       style={{ height: "100%", overflow: "hidden" }}
     >
@@ -542,6 +543,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
           (currentScreenRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
           (scrollContainerRefStable as React.MutableRefObject<HTMLDivElement | null>).current = el;
         }}
+        data-debug-id="router-current"
         className="relative z-20"
         style={{
           height: "100%",
