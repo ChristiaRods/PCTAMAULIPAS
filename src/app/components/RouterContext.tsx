@@ -97,6 +97,7 @@ const ANIMATION_MS = 300;
 const EASING = "cubic-bezier(0.2, 0.9, 0.3, 1)";
 const DIRECTION_RATIO = 1.5;      // dx must be 1.5× dy to lock horizontal (stricter for full-width)
 const LOCK_THRESHOLD = 10;        // px of movement before locking direction
+const SWIPE_BACK_ENABLED = false; // Disabled to avoid iOS fixed-layer regressions
 
 /* ─── Paths where swipe-back should be blocked (root dashboards) ─── */
 const BLOCK_BACK_TO = new Set(["/"]);
@@ -306,6 +307,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
 
   /* ─── Touch handlers ─── */
   const handleTouchStart = useCallback((e: TouchEvent) => {
+    if (!SWIPE_BACK_ENABLED) return;
     if (isAnimatingRef.current || !canGoBackRef.current) return;
 
     // Block if previous path is a root dashboard
@@ -338,6 +340,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
   }, []);
 
   const handleTouchMove = useCallback((e: TouchEvent) => {
+    if (!SWIPE_BACK_ENABLED) return;
     if (!isTouchActiveRef.current) return;
 
     const t = e.touches[0];
@@ -399,6 +402,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
   }, [applyTransform]);
 
   const handleTouchEnd = useCallback(() => {
+    if (!SWIPE_BACK_ENABLED) return;
     if (!isTouchActiveRef.current || !isHorizontalRef.current) {
       isTouchActiveRef.current = false;
       return;
@@ -484,7 +488,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
     [previousPath, previousParams, navigate, goBack, history.length]
   );
 
-  const isPrevMounted = showPrevScreen !== false;
+  const isPrevMounted = SWIPE_BACK_ENABLED && showPrevScreen !== false;
 
   /**
    * ★ Keep frozenPrevRef updated every render WHILE no gesture is active.

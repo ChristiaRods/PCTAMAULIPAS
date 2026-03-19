@@ -11,15 +11,23 @@ generatePWAIcons();
 const setAppHeight = () => {
   if (typeof window === "undefined") return;
 
-  const candidates = [
-    window.visualViewport?.height ?? 0,
-    window.innerHeight ?? 0,
-    document.documentElement.clientHeight ?? 0,
-  ].filter((value) => Number.isFinite(value) && value > 0);
+  const inner = window.innerHeight ?? 0;
+  const doc = document.documentElement.clientHeight ?? 0;
+  const vv = window.visualViewport;
+  const vvComposed = vv ? vv.height + vv.offsetTop : 0;
 
+  const candidates = [inner, doc, vvComposed].filter(
+    (value) => Number.isFinite(value) && value > 0,
+  );
   if (candidates.length === 0) return;
-  const viewportHeight = Math.min(...candidates);
-  document.documentElement.style.setProperty("--app-height", `${Math.round(viewportHeight)}px`);
+
+  // On iOS Safari/PWA, visualViewport can get stuck smaller after keyboard.
+  // Use the largest stable layout height so the shell never remains truncated.
+  const viewportHeight = Math.max(...candidates);
+  document.documentElement.style.setProperty(
+    "--app-height",
+    `${Math.round(viewportHeight)}px`,
+  );
 };
 
 setAppHeight();
