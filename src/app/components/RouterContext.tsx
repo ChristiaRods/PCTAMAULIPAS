@@ -507,7 +507,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
       ref={containerRef}
       data-debug-id="router-shell"
       className="relative"
-      style={{ height: "100%", overflow: "hidden" }}
+      style={{ height: "var(--app-height, 100svh)", overflow: "hidden" }}
     >
       {/* ═══ Previous screen (behind) — uses FROZEN ref, survives history changes ═══ */}
       {isPrevMounted && frozenPrevRef.current && (
@@ -547,7 +547,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
         data-debug-path={path}
         className="relative z-20"
         style={{
-          height: "100%",
+          height: "var(--app-height, 100svh)",
           overflowY: "auto",
           overflowX: "hidden",
           overscrollBehaviorY: "contain",

@@ -27,6 +27,7 @@ type MetricsSnapshot = {
   navMode: string;
   navPosition: string;
   navBottomStyle: string;
+  appHeightVar: number;
   safeArea: { top: number; right: number; bottom: number; left: number };
   safeAreaRuntime: {
     topRaw: number;
@@ -39,6 +40,8 @@ type MetricsSnapshot = {
   };
   gapBelowNav: number | null;
   bottomElement: string;
+  bottomElementRect: { top: number; bottom: number; height: number } | null;
+  gapBelowBottomElement: number | null;
   bottomStack: string[];
   fixedLayers: FixedLayerSnapshot[];
   now: string;
@@ -137,7 +140,12 @@ function readMetrics(probe: HTMLDivElement | null): MetricsSnapshot {
   const navCoreRect = toRect(navCore);
   const gapBelowNav = navCoreRect ? round(viewportHeight - navCoreRect.bottom) : null;
   const pointY = Math.max(0, viewportHeight - 2);
-  const bottomElement = summarizeElement(document.elementFromPoint(Math.round(viewportWidth / 2), pointY));
+  const bottomEl = document.elementFromPoint(Math.round(viewportWidth / 2), pointY);
+  const bottomElement = summarizeElement(bottomEl);
+  const bottomElementRect = toRect(bottomEl);
+  const gapBelowBottomElement = bottomElementRect
+    ? round(viewportHeight - bottomElementRect.bottom)
+    : null;
   const bottomStack = document
     .elementsFromPoint(Math.round(viewportWidth / 2), pointY)
     .slice(0, 5)
@@ -187,10 +195,13 @@ function readMetrics(probe: HTMLDivElement | null): MetricsSnapshot {
     navMode,
     navPosition: navCs?.position || "none",
     navBottomStyle: navCs?.bottom || "none",
+    appHeightVar: parseCssPx(rootStyle.getPropertyValue("--app-height")),
     safeArea,
     safeAreaRuntime,
     gapBelowNav,
     bottomElement,
+    bottomElementRect,
+    gapBelowBottomElement,
     bottomStack,
     fixedLayers: readFixedLayers(),
     now: new Date().toISOString(),
@@ -360,8 +371,16 @@ export function LayoutDebugPanel() {
             <div>nav-mode: {snapshot.navMode}</div>
             <div>nav-position: {snapshot.navPosition}</div>
             <div>nav-bottom-style: {snapshot.navBottomStyle}</div>
+            <div>app-height-var: {snapshot.appHeightVar}</div>
             <div>gap-below-nav: {snapshot.gapBelowNav ?? "none"}</div>
             <div>bottom-element: {snapshot.bottomElement}</div>
+            <div>
+              bottom-rect:{" "}
+              {snapshot.bottomElementRect
+                ? `${snapshot.bottomElementRect.top}-${snapshot.bottomElementRect.bottom} h${snapshot.bottomElementRect.height}`
+                : "none"}
+            </div>
+            <div>gap-below-bottom-element: {snapshot.gapBelowBottomElement ?? "none"}</div>
             <div>bottom-stack: {snapshot.bottomStack.join(" > ")}</div>
             <div>root: {snapshot.rootRect ? `${snapshot.rootRect.top}-${snapshot.rootRect.bottom} h${snapshot.rootRect.height}` : "none"}</div>
             <div>router: {snapshot.routerRect ? `${snapshot.routerRect.top}-${snapshot.routerRect.bottom} h${snapshot.routerRect.height}` : "none"}</div>
