@@ -11,24 +11,10 @@ generatePWAIcons();
 const setAppHeight = () => {
   if (typeof window === "undefined") return;
 
-  const isIOS =
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  const isStandalone =
-    window.matchMedia("(display-mode: standalone)").matches ||
-    (window.navigator as typeof window.navigator & { standalone?: boolean }).standalone === true;
-  const isPortrait = window.innerHeight >= window.innerWidth;
-  const screenHeight = isPortrait
-    ? Math.max(window.screen.height, window.screen.width)
-    : Math.min(window.screen.height, window.screen.width);
-
-  const viewportHeight = isIOS && isStandalone
-    ? screenHeight
-    : Math.max(
-        window.innerHeight,
-        window.visualViewport?.height ?? 0,
-        document.documentElement.clientHeight,
-      );
+  const viewportHeight =
+    window.visualViewport?.height ||
+    window.innerHeight ||
+    document.documentElement.clientHeight;
 
   document.documentElement.style.setProperty("--app-height", `${Math.round(viewportHeight)}px`);
 };

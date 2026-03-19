@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { Home, FileText, Activity, Bell, Settings } from "lucide-react";
 
@@ -132,26 +133,27 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  return (
-    <div
-      className="relative z-20 pointer-events-none px-4 pt-2"
-      style={{
-        paddingBottom: "4px",
-      }}
-    >
+  const nav = (
+    <div className="fixed inset-x-0 bottom-0 z-50 pointer-events-none">
       <div
-        ref={navContainerRef}
-        className="relative flex items-center gap-0 px-2 py-1 rounded-full overflow-visible pointer-events-auto"
+        className="px-4 pointer-events-none"
         style={{
-          background: t.barBg,
-          backdropFilter: "blur(60px) saturate(1.8)",
-          WebkitBackdropFilter: "blur(60px) saturate(1.8)",
-          border: `0.5px solid ${t.barBorder}`,
-          boxShadow: t.barShadow,
-          transition:
-            "background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease",
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
         }}
       >
+        <div
+          ref={navContainerRef}
+          className="relative flex items-center gap-0 px-2 py-1 rounded-full overflow-visible pointer-events-auto"
+          style={{
+            background: t.barBg,
+            backdropFilter: "blur(60px) saturate(1.8)",
+            WebkitBackdropFilter: "blur(60px) saturate(1.8)",
+            border: `0.5px solid ${t.barBorder}`,
+            boxShadow: t.barShadow,
+            transition:
+              "background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease",
+          }}
+        >
         {/* Top specular highlight */}
         <div
           className="absolute inset-x-3 top-[2px] h-[45%] rounded-full pointer-events-none"
@@ -284,7 +286,11 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
             </button>
           );
         })}
+        </div>
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return nav;
+  return createPortal(nav, document.body);
 }

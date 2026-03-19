@@ -922,7 +922,7 @@ function NotificationsView({
         </div>
       )}
 
-      <div className="h-4 shrink-0" />
+      <div style={{ height: "var(--nav-dock-space)" }} />
     </PullToRefresh>
   );
 }
@@ -1169,7 +1169,10 @@ export function SupervisorNotifications() {
           </div>
 
           {/* ═══ FEED ═══ */}
-          <div className="flex-1 flex flex-col gap-2">
+          <div
+            className="flex-1 flex flex-col gap-2"
+            style={{ paddingBottom: "var(--nav-dock-space)" }}
+          >
             {/* ── Separador de fecha ── */}
             <div className="flex items-center gap-3 px-4 mb-0 mt-1">
               <div className="flex-1 h-px bg-[#D1D1D6]" />
@@ -1192,7 +1195,7 @@ export function SupervisorNotifications() {
 
             {/* ── End of feed indicator ── */}
             {filtered.length > 0 && (
-              <div className="flex items-center justify-center py-6">
+              <div className="flex items-center justify-center py-6 pb-2">
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-px bg-[#D1D1D6]" />
                   <span className="text-[12px] text-[#C7C7CC]" style={{ fontWeight: 400 }}>
