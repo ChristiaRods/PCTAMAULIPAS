@@ -916,7 +916,7 @@ export function SettingsView({ onClose }: { onClose?: () => void }) {
   return (
     <div className="relative flex-1 overflow-hidden">
       {/* ─── Main settings scroll ─── */}
-      <div className="h-full pb-32 overflow-y-auto">
+      <div className="h-full pb-12 overflow-y-auto">
         {/* ─── Inline header when used as overlay with onClose ─── */}
         {onClose && (
           <SettingsHeader

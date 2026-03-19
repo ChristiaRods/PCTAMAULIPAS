@@ -1315,7 +1315,7 @@ function ReportFormView() {
   }, []);
 
   return (
-    <PullToRefresh onRefresh={handleRefresh} className="flex-1 min-h-0 pb-6">
+    <PullToRefresh onRefresh={handleRefresh} className="flex-1 min-h-0">
       {/* ═══ Map Picker Modal ═══ */}
       {showMapPicker && (
         <MapPickerModal

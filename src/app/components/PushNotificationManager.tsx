@@ -710,7 +710,7 @@ export function PushNotificationManager() {
   const canTest = status === "subscribed" || isDemo;
 
   return (
-    <div className="flex-1 min-h-0 pb-6">
+    <div className="flex-1 min-h-0">
       {/* Header section */}
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-center justify-between mb-3">

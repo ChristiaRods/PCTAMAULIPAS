@@ -221,8 +221,8 @@ function initialEnabled() {
   } catch (_e) {
     // ignore localStorage errors
   }
-  // Default ON while we diagnose this issue.
-  return true;
+  // Default OFF; enable with ?debugLayout=1 when needed.
+  return false;
 }
 
 export function LayoutDebugPanel() {
