@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { Home, FileText, Activity, Bell, Settings } from "lucide-react";
 
@@ -133,43 +132,26 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const nav = (
+  return (
     <div
-      className="fixed inset-x-0 bottom-0 z-50 pointer-events-none"
+      className="relative z-20 pointer-events-none px-4 pt-2"
       style={{
-        background: "transparent",
+        paddingBottom: "4px",
       }}
     >
       <div
-        className="absolute inset-x-0 bottom-0 pointer-events-none"
+        ref={navContainerRef}
+        className="relative flex items-center gap-0 px-2 py-1 rounded-full overflow-visible pointer-events-auto"
         style={{
-          height: "calc(env(safe-area-inset-bottom, 0px) + 92px)",
-          background: "rgba(242,242,247,0.94)",
-          backdropFilter: "blur(28px) saturate(1.25)",
-          WebkitBackdropFilter: "blur(28px) saturate(1.25)",
-          borderTop: "1px solid rgba(188,149,91,0.12)",
-          boxShadow: "0 -6px 18px rgba(0,0,0,0.04)",
-        }}
-      />
-      <div
-        className="px-4 pointer-events-none"
-        style={{
-          paddingBottom: "max(4px, calc(env(safe-area-inset-bottom, 0px) - 24px))",
+          background: t.barBg,
+          backdropFilter: "blur(60px) saturate(1.8)",
+          WebkitBackdropFilter: "blur(60px) saturate(1.8)",
+          border: `0.5px solid ${t.barBorder}`,
+          boxShadow: t.barShadow,
+          transition:
+            "background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease",
         }}
       >
-        <div
-          ref={navContainerRef}
-          className="relative flex items-center gap-0 px-2 py-1 rounded-full overflow-visible pointer-events-auto"
-          style={{
-            background: t.barBg,
-            backdropFilter: "blur(60px) saturate(1.8)",
-            WebkitBackdropFilter: "blur(60px) saturate(1.8)",
-            border: `0.5px solid ${t.barBorder}`,
-            boxShadow: t.barShadow,
-            transition:
-              "background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease",
-          }}
-        >
         {/* Top specular highlight */}
         <div
           className="absolute inset-x-3 top-[2px] h-[45%] rounded-full pointer-events-none"
@@ -302,14 +284,7 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
             </button>
           );
         })}
-        </div>
       </div>
     </div>
   );
-
-  if (typeof document === "undefined") {
-    return nav;
-  }
-
-  return createPortal(nav, document.body);
 }
