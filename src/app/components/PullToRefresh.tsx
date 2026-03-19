@@ -94,6 +94,7 @@ export function PullToRefresh({
       style={{
         WebkitOverflowScrolling: "touch",
         overscrollBehaviorY: "contain",
+        touchAction: "pan-y",
       }}
     >
       {/* Spinner area */}
