@@ -38,21 +38,41 @@ function isStandaloneDisplayMode() {
   return mediaStandalone || iosStandalone;
 }
 
-function detectViewportAlreadyExcludesInsets(insets: SafeInsets) {
+function detectViewportInsetExclusion(insets: SafeInsets) {
   const viewportHeight = roundPx(window.visualViewport?.height ?? window.innerHeight);
-  const combined = viewportHeight + insets.top + insets.bottom;
   const screenHeight = roundPx(window.screen.height);
-  return Math.abs(combined - screenHeight) <= TOLERANCE_PX;
+
+  const excludesTopOnly =
+    insets.top > 0 &&
+    Math.abs(viewportHeight + insets.top - screenHeight) <= TOLERANCE_PX;
+  const excludesBottomOnly =
+    insets.bottom > 0 &&
+    Math.abs(viewportHeight + insets.bottom - screenHeight) <= TOLERANCE_PX;
+  const excludesBoth =
+    insets.top > 0 &&
+    insets.bottom > 0 &&
+    Math.abs(viewportHeight + insets.top + insets.bottom - screenHeight) <= TOLERANCE_PX;
+
+  const excludesTop = excludesBoth || excludesTopOnly;
+  const excludesBottom = excludesBoth || excludesBottomOnly;
+
+  return {
+    excludesTop,
+    excludesBottom,
+    excludesBoth,
+  };
 }
 
 function applySafeAreaVariables() {
   if (typeof window === "undefined" || typeof document === "undefined") return;
   const insets = readSafeInsets();
   const standalone = isStandaloneDisplayMode();
-  const viewportExcludesInsets = standalone && detectViewportAlreadyExcludesInsets(insets);
+  const exclusion = standalone
+    ? detectViewportInsetExclusion(insets)
+    : { excludesTop: false, excludesBottom: false, excludesBoth: false };
 
-  const effectiveTop = viewportExcludesInsets ? 0 : insets.top;
-  const effectiveBottom = viewportExcludesInsets ? 0 : insets.bottom;
+  const effectiveTop = exclusion.excludesTop ? 0 : insets.top;
+  const effectiveBottom = exclusion.excludesBottom ? 0 : insets.bottom;
   const navBottomOffset = standalone ? 0 : 8;
 
   const rootStyle = document.documentElement.style;
@@ -64,7 +84,9 @@ function applySafeAreaVariables() {
   rootStyle.setProperty("--pc-safe-bottom-effective", `${effectiveBottom}px`);
   rootStyle.setProperty("--pc-nav-bottom-offset", `${navBottomOffset}px`);
   rootStyle.setProperty("--pc-safe-mode", standalone ? "standalone" : "browser");
-  rootStyle.setProperty("--pc-safe-viewport-excludes-insets", viewportExcludesInsets ? "1" : "0");
+  rootStyle.setProperty("--pc-safe-viewport-excludes-insets", exclusion.excludesBoth ? "1" : "0");
+  rootStyle.setProperty("--pc-safe-viewport-excludes-top", exclusion.excludesTop ? "1" : "0");
+  rootStyle.setProperty("--pc-safe-viewport-excludes-bottom", exclusion.excludesBottom ? "1" : "0");
 }
 
 export function installSafeAreaRuntimeVars() {
