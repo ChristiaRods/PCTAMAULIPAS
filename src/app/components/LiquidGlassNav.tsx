@@ -15,27 +15,31 @@ const navItems: { id: NavView; icon: React.ElementType; label: string }[] = [
   { id: "reportes", icon: FileText, label: "Reportes" },
   { id: "monitoreo", icon: Activity, label: "Monitoreo" },
   { id: "notificaciones", icon: Bell, label: "Alertas" },
-  { id: "menu", icon: Settings, label: "Config" },
+  { id: "menu", icon: Settings, label: "Ajustes" },
 ];
 
 const THEME = {
   activeColor: "#AB1738",
   inactiveColor: "#54565B",
   highContrastInactive: "#3A3A3C",
-  barBg: "rgba(255,255,255,0.72)",
-  barBgFallback: "rgba(250,250,252,0.96)",
-  barBorder: "rgba(188,149,91,0.18)",
-  barBorderFallback: "rgba(188,149,91,0.28)",
-  barShadow: "0 2px 20px rgba(78,11,21,0.05), 0 8px 40px rgba(0,0,0,0.04)",
-  bubbleBg: "rgba(255,255,255,0.65)",
+  barBg: "rgba(255,255,255,0.58)",
+  barBgFallback: "rgba(246,246,248,0.94)",
+  barBorder: "rgba(188,149,91,0.24)",
+  barBorderFallback: "rgba(188,149,91,0.34)",
+  barShadow: "0 14px 38px rgba(58,5,16,0.16), 0 2px 12px rgba(0,0,0,0.08)",
+  bubbleBg: "rgba(255,255,255,0.76)",
   bubbleBgFallback: "rgba(255,255,255,0.98)",
-  bubbleBorder: "rgba(188,149,91,0.15)",
-  bubbleShadow: "0 1px 6px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9)",
+  bubbleBorder: "rgba(188,149,91,0.22)",
+  bubbleShadow: "0 8px 18px rgba(56,9,18,0.12), inset 0 1px 0 rgba(255,255,255,0.94)",
   crescentBg: "rgba(188,149,91,0.35)",
+  glassFlow:
+    "linear-gradient(112deg, rgba(255,255,255,0.00) 0%, rgba(255,255,255,0.50) 44%, rgba(255,255,255,0.00) 70%)",
   specularHighlight:
-    "linear-gradient(to bottom, rgba(255,255,255,0.70), rgba(255,255,255,0.0))",
+    "linear-gradient(to bottom, rgba(255,255,255,0.84), rgba(255,255,255,0.0))",
   specularBubble:
-    "linear-gradient(to bottom, rgba(255,255,255,0.35), transparent)",
+    "linear-gradient(to bottom, rgba(255,255,255,0.52), transparent)",
+  bubbleGlow:
+    "radial-gradient(110% 80% at 50% 0%, rgba(255,255,255,0.58), rgba(255,255,255,0.08) 62%, rgba(255,255,255,0) 100%)",
   iridescentRim:
     "conic-gradient(from 0deg, rgba(171,23,56,0.10), rgba(188,149,91,0.08), rgba(230,213,181,0.06), rgba(205,166,122,0.08), rgba(84,86,91,0.06), rgba(171,23,56,0.10))",
   fallbackTopHighlight:
@@ -123,18 +127,18 @@ export function LiquidGlassNav({
     setBubblePos(position);
 
     if (!reduceMotion && !isFirstRender.current && distance > 0 && squishRef.current) {
-      const scaleX = 1 + Math.min(distance * 0.14, 0.38);
-      const scaleY = 1 - Math.min(distance * 0.07, 0.18);
+      const scaleX = 1 + Math.min(distance * 0.22, 0.58);
+      const scaleY = 1 - Math.min(distance * 0.12, 0.24);
 
       squishRef.current.animate(
         [
           { transform: "scaleX(1) scaleY(1)", offset: 0 },
           { transform: `scaleX(${scaleX}) scaleY(${scaleY})`, offset: 0.3 },
-          { transform: "scaleX(0.95) scaleY(1.05)", offset: 0.65 },
+          { transform: "scaleX(0.92) scaleY(1.08)", offset: 0.65 },
           { transform: "scaleX(1) scaleY(1)", offset: 1 },
         ],
         {
-          duration: 500,
+          duration: 560,
           easing: "cubic-bezier(0.22, 1, 0.36, 1)",
           fill: "none",
         },
@@ -196,8 +200,8 @@ export function LiquidGlassNav({
 
     return {
       background,
-      backdropFilter: hasBackdrop ? "blur(60px) saturate(1.8)" : "none",
-      WebkitBackdropFilter: hasBackdrop ? "blur(60px) saturate(1.8)" : "none",
+      backdropFilter: hasBackdrop ? "blur(44px) saturate(2.1)" : "none",
+      WebkitBackdropFilter: hasBackdrop ? "blur(44px) saturate(2.1)" : "none",
       border: `0.5px solid ${border}`,
       boxShadow: THEME.barShadow,
       transition: reduceMotion
@@ -210,8 +214,8 @@ export function LiquidGlassNav({
   const bubbleStyle = useMemo<React.CSSProperties>(() => {
     return {
       background: hasBackdrop ? THEME.bubbleBg : THEME.bubbleBgFallback,
-      backdropFilter: hasBackdrop ? "blur(25px) brightness(1.08)" : "none",
-      WebkitBackdropFilter: hasBackdrop ? "blur(25px) brightness(1.08)" : "none",
+      backdropFilter: hasBackdrop ? "blur(26px) brightness(1.12) saturate(1.2)" : "none",
+      WebkitBackdropFilter: hasBackdrop ? "blur(26px) brightness(1.12) saturate(1.2)" : "none",
       border: `0.5px solid ${THEME.bubbleBorder}`,
       boxShadow: THEME.bubbleShadow,
       willChange: "transform",
@@ -230,6 +234,24 @@ export function LiquidGlassNav({
         className="absolute inset-x-3 top-[2px] h-[45%] rounded-full pointer-events-none"
         style={{ background: hasBackdrop ? THEME.specularHighlight : THEME.fallbackTopHighlight }}
       />
+      {bubblePos && (
+        <motion.div
+          className="absolute inset-y-0 w-[52%] rounded-full pointer-events-none"
+          initial={false}
+          animate={{ left: Math.max(0, bubblePos.left - 20) }}
+          transition={
+            reduceMotion
+              ? { duration: 0.12, ease: "linear" }
+              : { type: "spring", stiffness: 220, damping: 24, mass: 0.84 }
+          }
+          style={{
+            background: THEME.glassFlow,
+            opacity: hasBackdrop ? 0.72 : 0.3,
+            mixBlendMode: hasBackdrop ? "screen" : "normal",
+            filter: "blur(0.4px)",
+          }}
+        />
+      )}
 
       {bubblePos && (
         <motion.div
@@ -252,6 +274,13 @@ export function LiquidGlassNav({
             className="absolute inset-0 rounded-full"
             style={bubbleStyle}
           >
+            <div
+              className="absolute inset-0 rounded-[inherit] pointer-events-none"
+              style={{
+                background: THEME.bubbleGlow,
+                opacity: hasBackdrop ? 1 : 0.7,
+              }}
+            />
             {hasBackdrop && (
               <div
                 className="absolute inset-0 rounded-[inherit] pointer-events-none"
@@ -284,7 +313,7 @@ export function LiquidGlassNav({
             onClick={() => onChangeView(item.id)}
             aria-label={item.label}
             aria-current={isActive ? "page" : undefined}
-            whileTap={reduceMotion ? undefined : { scale: 0.965, y: 0.35 }}
+            whileTap={reduceMotion ? undefined : { scale: 0.94, y: 1.1 }}
             transition={reduceMotion ? { duration: 0.08 } : { type: "spring", stiffness: 540, damping: 30, mass: 0.6 }}
             className="relative z-10 flex flex-1 flex-col items-center justify-center gap-1.5 rounded-[20px] py-3 min-h-[62px] overflow-visible"
           >
@@ -301,7 +330,16 @@ export function LiquidGlassNav({
               }}
             />
 
-            <div className="relative z-10 pointer-events-none">
+            <motion.div
+              className="relative z-10 pointer-events-none"
+              initial={false}
+              animate={reduceMotion
+                ? { scale: 1, y: 0 }
+                : isActive
+                  ? { scale: 1.06, y: -1.1 }
+                  : { scale: 1, y: 0 }}
+              transition={reduceMotion ? { duration: 0.1 } : { type: "spring", stiffness: 360, damping: 24, mass: 0.6 }}
+            >
               <Icon
                 size={24}
                 style={{
@@ -329,10 +367,17 @@ export function LiquidGlassNav({
                   </span>
                 </motion.div>
               )}
-            </div>
+            </motion.div>
 
-            <span
+            <motion.span
               className="relative z-10 text-[11px] whitespace-nowrap pointer-events-none"
+              initial={false}
+              animate={reduceMotion
+                ? { y: 0, opacity: 1 }
+                : isActive
+                  ? { y: -0.8, opacity: 1 }
+                  : { y: 0, opacity: 0.93 }}
+              transition={reduceMotion ? { duration: 0.12 } : { type: "spring", stiffness: 380, damping: 28, mass: 0.58 }}
               style={{
                 color: isActive ? THEME.activeColor : iconColor,
                 fontWeight: isActive ? 700 : 500,
@@ -340,7 +385,7 @@ export function LiquidGlassNav({
               }}
             >
               {item.label}
-            </span>
+            </motion.span>
           </motion.button>
         );
       })}
@@ -363,6 +408,8 @@ export function LiquidGlassNav({
     <div
       data-debug-id="liquid-nav"
       data-debug-nav-mode={layoutMode}
+      data-debug-glass={hasBackdrop ? "backdrop" : "fallback"}
+      data-debug-reduce-motion={reduceMotion ? "1" : "0"}
       className="fixed bottom-6 left-4 right-4 z-50 overflow-visible pointer-events-none"
     >
       {navCore}
