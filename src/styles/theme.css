@@ -52,6 +52,16 @@
   --glass-highlight: inset 0 0.5px 0 rgba(255, 255, 255, 0.5);
   --shadow-card: 0 0.5px 0 rgba(0,0,0,0.04), 0 2px 6px rgba(0,0,0,0.03), 0 8px 24px rgba(0,0,0,0.05);
   --shadow-button: 0 1px 2px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.08);
+
+  /* Runtime safe-area diagnostics */
+  --pc-safe-top-raw: 0px;
+  --pc-safe-right-raw: 0px;
+  --pc-safe-bottom-raw: 0px;
+  --pc-safe-left-raw: 0px;
+  --pc-safe-top-effective: 0px;
+  --pc-safe-bottom-effective: 0px;
+  --pc-safe-mode: browser;
+  --pc-safe-viewport-excludes-insets: 0;
 }
 
 .dark {

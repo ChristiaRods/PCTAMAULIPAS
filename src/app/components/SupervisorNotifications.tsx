@@ -231,6 +231,8 @@ function FeedCard({ item, onOpen, onImageClick }: { item: FeedItem; onOpen: () =
 
 /* ─── Closed statuses ─── */
 const CLOSED_STATUSES = ["Atendido", "Cerrado", "Archivado", "Falso reporte"];
+const OVERLAY_NAV_SPACE =
+  "calc(var(--pc-safe-bottom-effective, env(safe-area-inset-bottom, 0px)) + 88px)";
 
 /* ─── Persistent read state ─── */
 const READ_STATE_KEY = "pc-tamaulipas-read-notifs";
@@ -922,7 +924,7 @@ function NotificationsView({
         </div>
       )}
 
-      <div className="h-0 shrink-0" />
+      <div style={{ height: OVERLAY_NAV_SPACE }} />
     </PullToRefresh>
   );
 }
@@ -1169,7 +1171,10 @@ export function SupervisorNotifications() {
           </div>
 
           {/* ═══ FEED ═══ */}
-          <div className="flex-1 flex flex-col gap-2">
+          <div
+            className="flex-1 flex flex-col gap-2"
+            style={{ paddingBottom: OVERLAY_NAV_SPACE }}
+          >
             {/* ── Separador de fecha ── */}
             <div className="flex items-center gap-3 px-4 mb-0 mt-1">
               <div className="flex-1 h-px bg-[#D1D1D6]" />
@@ -1216,7 +1221,6 @@ export function SupervisorNotifications() {
         currentView={navView}
         onChangeView={setNavView}
         notificationCount={navView === "notificaciones" ? 0 : unreadNotifCount}
-        layoutMode="inline"
       />
     </div>
   );

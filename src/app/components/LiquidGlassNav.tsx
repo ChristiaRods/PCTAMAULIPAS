@@ -142,6 +142,8 @@ export function LiquidGlassNav({
   const navCore = (
     <div
       ref={navContainerRef}
+      data-debug-id="liquid-nav-core"
+      data-debug-nav-mode={layoutMode}
       className="relative flex items-center gap-0 px-2 py-1 rounded-full overflow-visible pointer-events-auto"
       style={{
         background: t.barBg,
@@ -292,6 +294,7 @@ export function LiquidGlassNav({
     return (
       <div
         data-debug-id="liquid-nav"
+        data-debug-nav-mode={layoutMode}
         className="relative z-50 overflow-visible pointer-events-none px-4"
         style={{ paddingBottom: 0 }}
       >
@@ -303,8 +306,12 @@ export function LiquidGlassNav({
   const nav = (
     <div
       data-debug-id="liquid-nav"
+      data-debug-nav-mode={layoutMode}
       className="fixed left-4 right-4 z-50 overflow-visible pointer-events-none"
-      style={{ bottom: "8px" }}
+      style={{
+        bottom:
+          "var(--pc-safe-bottom-effective, env(safe-area-inset-bottom, 0px))",
+      }}
     >
       {navCore}
     </div>

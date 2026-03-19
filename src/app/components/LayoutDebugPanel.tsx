@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 type FixedLayerSnapshot = {
   id: string;
   zIndex: string;
+  pointerEvents: string;
   top: number;
   bottom: number;
   height: number;
@@ -10,6 +11,7 @@ type FixedLayerSnapshot = {
 
 type MetricsSnapshot = {
   path: string;
+  routerPath: string;
   userAgent: string;
   viewportMode: string;
   windowInner: { w: number; h: number };
@@ -21,15 +23,32 @@ type MetricsSnapshot = {
   routerRect: { top: number; bottom: number; height: number } | null;
   currentRect: { top: number; bottom: number; height: number } | null;
   navRect: { top: number; bottom: number; height: number } | null;
+  navCoreRect: { top: number; bottom: number; height: number } | null;
+  navMode: string;
+  navPosition: string;
+  navBottomStyle: string;
   safeArea: { top: number; right: number; bottom: number; left: number };
+  safeAreaRuntime: {
+    topRaw: number;
+    bottomRaw: number;
+    topEffective: number;
+    bottomEffective: number;
+    mode: string;
+    viewportExcludesInsets: string;
+  };
   gapBelowNav: number | null;
   bottomElement: string;
+  bottomStack: string[];
   fixedLayers: FixedLayerSnapshot[];
   now: string;
 };
 
 function round(n: number) {
   return Number.isFinite(n) ? Math.round(n) : 0;
+}
+
+function parseCssPx(value: string) {
+  return round(parseFloat(value) || 0);
 }
 
 function toRect(el: Element | null) {
@@ -84,6 +103,7 @@ function readFixedLayers(limit = 8) {
     layers.push({
       id: formatLayerId(el),
       zIndex: cs.zIndex || "auto",
+      pointerEvents: cs.pointerEvents || "auto",
       top: round(rect.top),
       bottom: round(rect.bottom),
       height: round(rect.height),
@@ -107,17 +127,39 @@ function readMetrics(probe: HTMLDivElement | null): MetricsSnapshot {
   const viewportHeight = round(vv?.height ?? window.innerHeight);
   const viewportWidth = round(vv?.width ?? window.innerWidth);
   const nav = document.querySelector('[data-debug-id="liquid-nav"]');
+  const navCore = document.querySelector('[data-debug-id="liquid-nav-core"]');
   const router = document.querySelector('[data-debug-id="router-shell"]');
   const current = document.querySelector('[data-debug-id="router-current"]');
   const root = document.getElementById("root");
   const safeArea = readSafeAreaProbe(probe);
   const navRect = toRect(nav);
-  const gapBelowNav = navRect ? round(viewportHeight - navRect.bottom) : null;
+  const navCoreRect = toRect(navCore);
+  const gapBelowNav = navCoreRect ? round(viewportHeight - navCoreRect.bottom) : null;
   const pointY = Math.max(0, viewportHeight - 2);
   const bottomElement = summarizeElement(document.elementFromPoint(Math.round(viewportWidth / 2), pointY));
+  const bottomStack = document
+    .elementsFromPoint(Math.round(viewportWidth / 2), pointY)
+    .slice(0, 5)
+    .map((el) => summarizeElement(el));
+  const navEl = nav instanceof HTMLElement ? nav : null;
+  const navCs = navEl ? window.getComputedStyle(navEl) : null;
+  const currentEl = current instanceof HTMLElement ? current : null;
+  const routerPath = currentEl?.dataset.debugPath || "unknown";
+  const navMode = navEl?.dataset.debugNavMode || "unknown";
+  const rootStyle = window.getComputedStyle(document.documentElement);
+  const safeAreaRuntime = {
+    topRaw: parseCssPx(rootStyle.getPropertyValue("--pc-safe-top-raw")),
+    bottomRaw: parseCssPx(rootStyle.getPropertyValue("--pc-safe-bottom-raw")),
+    topEffective: parseCssPx(rootStyle.getPropertyValue("--pc-safe-top-effective")),
+    bottomEffective: parseCssPx(rootStyle.getPropertyValue("--pc-safe-bottom-effective")),
+    mode: rootStyle.getPropertyValue("--pc-safe-mode").trim() || "unset",
+    viewportExcludesInsets:
+      rootStyle.getPropertyValue("--pc-safe-viewport-excludes-insets").trim() || "unset",
+  };
 
   return {
     path: window.location.pathname + window.location.search,
+    routerPath,
     userAgent: navigator.userAgent,
     viewportMode: readViewportMode(),
     windowInner: { w: round(window.innerWidth), h: round(window.innerHeight) },
@@ -139,9 +181,15 @@ function readMetrics(probe: HTMLDivElement | null): MetricsSnapshot {
     routerRect: toRect(router),
     currentRect: toRect(current),
     navRect,
+    navCoreRect,
+    navMode,
+    navPosition: navCs?.position || "none",
+    navBottomStyle: navCs?.bottom || "none",
     safeArea,
+    safeAreaRuntime,
     gapBelowNav,
     bottomElement,
+    bottomStack,
     fixedLayers: readFixedLayers(),
     now: new Date().toISOString(),
   };
@@ -291,22 +339,34 @@ export function LayoutDebugPanel() {
         {!collapsed && snapshot && (
           <div style={{ padding: 10, overflow: "auto", maxHeight: "min(60vh, 470px)" }}>
             <div>mode: {snapshot.viewportMode}</div>
-            <div>path: {snapshot.path}</div>
+            <div>url-path: {snapshot.path}</div>
+            <div>router-path: {snapshot.routerPath}</div>
             <div>inner: {snapshot.windowInner.w} x {snapshot.windowInner.h}</div>
             <div>vv: {snapshot.visualViewport ? `${snapshot.visualViewport.w} x ${snapshot.visualViewport.h}` : "none"}</div>
             <div>doc: {snapshot.docClient.w} x {snapshot.docClient.h}</div>
             <div>screen: {snapshot.screen.w} x {snapshot.screen.h}</div>
             <div>safe-bottom: {snapshot.safeArea.bottom}</div>
+            <div>safe-bottom-raw-var: {snapshot.safeAreaRuntime.bottomRaw}</div>
+            <div>safe-bottom-effective-var: {snapshot.safeAreaRuntime.bottomEffective}</div>
+            <div>safe-top-raw-var: {snapshot.safeAreaRuntime.topRaw}</div>
+            <div>safe-top-effective-var: {snapshot.safeAreaRuntime.topEffective}</div>
+            <div>safe-mode-var: {snapshot.safeAreaRuntime.mode}</div>
+            <div>viewport-excludes-insets-var: {snapshot.safeAreaRuntime.viewportExcludesInsets}</div>
             <div>nav: {snapshot.navRect ? `${snapshot.navRect.top}-${snapshot.navRect.bottom} h${snapshot.navRect.height}` : "none"}</div>
+            <div>nav-core: {snapshot.navCoreRect ? `${snapshot.navCoreRect.top}-${snapshot.navCoreRect.bottom} h${snapshot.navCoreRect.height}` : "none"}</div>
+            <div>nav-mode: {snapshot.navMode}</div>
+            <div>nav-position: {snapshot.navPosition}</div>
+            <div>nav-bottom-style: {snapshot.navBottomStyle}</div>
             <div>gap-below-nav: {snapshot.gapBelowNav ?? "none"}</div>
             <div>bottom-element: {snapshot.bottomElement}</div>
+            <div>bottom-stack: {snapshot.bottomStack.join(" > ")}</div>
             <div>root: {snapshot.rootRect ? `${snapshot.rootRect.top}-${snapshot.rootRect.bottom} h${snapshot.rootRect.height}` : "none"}</div>
             <div>router: {snapshot.routerRect ? `${snapshot.routerRect.top}-${snapshot.routerRect.bottom} h${snapshot.routerRect.height}` : "none"}</div>
             <div>current: {snapshot.currentRect ? `${snapshot.currentRect.top}-${snapshot.currentRect.bottom} h${snapshot.currentRect.height}` : "none"}</div>
             <div style={{ marginTop: 8, opacity: 0.9 }}>fixed layers:</div>
             {snapshot.fixedLayers.map((layer, idx) => (
               <div key={`${layer.id}-${idx}`} style={{ opacity: 0.85 }}>
-                {layer.zIndex} | {layer.top}-{layer.bottom} | {layer.id}
+                {layer.zIndex} {layer.pointerEvents} | {layer.top}-{layer.bottom} | {layer.id}
               </div>
             ))}
             <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
@@ -343,4 +403,3 @@ export function LayoutDebugPanel() {
     </>
   );
 }
-

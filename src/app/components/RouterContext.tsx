@@ -544,6 +544,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
           (scrollContainerRefStable as React.MutableRefObject<HTMLDivElement | null>).current = el;
         }}
         data-debug-id="router-current"
+        data-debug-path={path}
         className="relative z-20"
         style={{
           height: "100%",

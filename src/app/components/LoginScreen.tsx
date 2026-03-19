@@ -34,8 +34,24 @@ export function LoginScreen() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#1A0408] via-[#4A0C1A] to-[#8C1530] flex flex-col relative overflow-hidden"
-      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      style={{
+        paddingTop:
+          "var(--pc-safe-top-effective, env(safe-area-inset-top, 0px))",
+      }}
     >
+      <button
+        onClick={() => navigate("/layout-lab")}
+        className="absolute top-3 right-3 z-20 px-3 py-1.5 rounded-lg text-[12px] text-white/90 active:opacity-70"
+        style={{
+          background: "rgba(255,255,255,0.14)",
+          border: "1px solid rgba(255,255,255,0.22)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+        }}
+      >
+        Layout Lab
+      </button>
+
       {/* Ambient light circles */}
       <div className="absolute top-[-20%] left-[-30%] w-[80vw] h-[80vw] rounded-full bg-[#AB1738]/8 blur-3xl" />
       <div className="absolute bottom-[30%] right-[-20%] w-[60vw] h-[60vw] rounded-full bg-white/[0.03] blur-3xl" />
@@ -62,7 +78,8 @@ export function LoginScreen() {
           backdropFilter: "saturate(180%) blur(40px)",
           WebkitBackdropFilter: "saturate(180%) blur(40px)",
           boxShadow: "inset 0 0.5px 0 rgba(255,255,255,0.6), 0 -12px 40px rgba(0,0,0,0.25)",
-          paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)",
+          paddingBottom:
+            "max(var(--pc-safe-bottom-effective, env(safe-area-inset-bottom, 0px)), 16px)",
         }}
       >
         <p className="text-center text-muted-foreground text-[15px] mb-1">Selecciona tu perfil para continuar</p>

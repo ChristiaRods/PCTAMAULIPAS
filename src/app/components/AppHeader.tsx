@@ -68,7 +68,12 @@ export function AppHeader({
       />
 
       {/* Safe-area spacer for iOS status bar */}
-      <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
+      <div
+        style={{
+          height:
+            "var(--pc-safe-top-effective, env(safe-area-inset-top, 0px))",
+        }}
+      />
 
       {/* Header content */}
       <div className="relative z-10 px-4 py-3.5 flex items-center gap-3">

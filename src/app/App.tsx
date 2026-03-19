@@ -7,6 +7,7 @@ import { MonitoringForm } from "./components/MonitoringForm";
 import { SupervisorNotifications } from "./components/SupervisorNotifications";
 import { AuditDetail } from "./components/AuditDetail";
 import { SettingsScreen } from "./components/SettingsScreen";
+import { LayoutLabScreen } from "./components/LayoutLabScreen";
 import { PWAManager } from "./components/PWAManager";
 import { LayoutDebugPanel } from "./components/LayoutDebugPanel";
 import { useEffect } from "react";
@@ -15,6 +16,7 @@ import {
   peekPendingNotificationId,
   initSWMessageListener,
 } from "./components/NotificationDeepLink";
+import { installSafeAreaRuntimeVars } from "./lib/safeAreaRuntime";
 
 /* ─── Error Boundary to catch runtime crashes ─── */
 class ErrorBoundary extends React.Component<
@@ -57,6 +59,7 @@ const routes = [
   { path: "/supervisor", component: SupervisorNotifications },
   { path: "/supervisor/:id", component: AuditDetail },
   { path: "/settings", component: SettingsScreen },
+  { path: "/layout-lab", component: LayoutLabScreen },
 ];
 
 /* ─── iOS/Android PWA meta tags (injected once) ─── */
@@ -116,6 +119,8 @@ function usePWAMetaTags() {
 
 export default function App() {
   usePWAMetaTags();
+
+  useEffect(() => installSafeAreaRuntimeVars(), []);
 
   useEffect(() => {
     initSWMessageListener();
