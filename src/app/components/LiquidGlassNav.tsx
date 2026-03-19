@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { Home, FileText, Activity, Bell, Settings } from "lucide-react";
 
@@ -132,7 +133,7 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  return (
+  const nav = (
     <div
       className="fixed left-4 right-4 z-50 overflow-visible"
       style={{ bottom: "env(safe-area-inset-bottom, 0px)" }}
@@ -285,4 +286,10 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") {
+    return nav;
+  }
+
+  return createPortal(nav, document.body);
 }

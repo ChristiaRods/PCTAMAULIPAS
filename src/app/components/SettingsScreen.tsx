@@ -12,7 +12,7 @@ export function SettingsScreen() {
     <div
       className="flex flex-col"
       style={{
-        minHeight: "100dvh",
+        minHeight: "var(--app-height, 100dvh)",
         background: "#F2F2F7",
       }}
     >

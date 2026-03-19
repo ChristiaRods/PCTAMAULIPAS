@@ -10,7 +10,11 @@ generatePWAIcons();
 // Keep app shell height aligned with the real visible viewport on mobile PWAs.
 const setAppHeight = () => {
   if (typeof window === "undefined") return;
-  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+  const viewportHeight = Math.max(
+    window.innerHeight,
+    window.visualViewport?.height ?? 0,
+    document.documentElement.clientHeight,
+  );
   document.documentElement.style.setProperty("--app-height", `${Math.round(viewportHeight)}px`);
 };
 

@@ -56,12 +56,13 @@ export function LoginScreen() {
 
       {/* Role selection — frosted sheet */}
       <div
-        className="relative z-10 rounded-t-[28px] px-5 pt-7 pb-12 space-y-3"
+        className="relative z-10 rounded-t-[28px] px-5 pt-7 space-y-3"
         style={{
           background: "rgba(242, 241, 239, 0.92)",
           backdropFilter: "saturate(180%) blur(40px)",
           WebkitBackdropFilter: "saturate(180%) blur(40px)",
           boxShadow: "inset 0 0.5px 0 rgba(255,255,255,0.6), 0 -12px 40px rgba(0,0,0,0.25)",
+          paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)",
         }}
       >
         <p className="text-center text-muted-foreground text-[15px] mb-1">Selecciona tu perfil para continuar</p>
