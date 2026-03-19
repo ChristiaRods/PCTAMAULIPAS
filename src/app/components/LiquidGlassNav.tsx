@@ -134,13 +134,10 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
   }, []);
 
   const nav = (
-    <div className="fixed inset-x-0 bottom-0 z-50 pointer-events-none">
-      <div
-        className="px-4 pointer-events-none"
-        style={{
-          paddingBottom: "4px",
-        }}
-      >
+    <div
+      className="fixed left-4 right-4 z-50 overflow-visible pointer-events-none"
+      style={{ bottom: "max(env(safe-area-inset-bottom, 0px), 8px)" }}
+    >
         <div
           ref={navContainerRef}
           className="relative flex items-center gap-0 px-2 py-1 rounded-full overflow-visible pointer-events-auto"
@@ -287,7 +284,6 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
           );
         })}
         </div>
-      </div>
     </div>
   );
 
