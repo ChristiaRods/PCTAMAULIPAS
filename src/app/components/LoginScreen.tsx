@@ -5,16 +5,16 @@ import { PCShieldIcon } from "./PCShieldIcon";
 const roles = [
   {
     id: "campo-911",
-    label: "Personal de Campo",
-    subtitle: "Reportes 911",
+    label: "Reportes 911",
+    subtitle: "Personal de Campo",
     icon: AlertTriangle,
     path: "/911",
     color: "bg-[#FF3B30]",
   },
   {
     id: "campo-monitoreo",
-    label: "Personal de Campo",
-    subtitle: "Monitoreo",
+    label: "Monitoreo",
+    subtitle: "Personal de Campo",
     icon: Activity,
     path: "/monitoreo",
     color: "bg-primary",
@@ -22,7 +22,7 @@ const roles = [
   {
     id: "coordinador",
     label: "Coordinador Regional",
-    subtitle: "Supervisión (Solo Lectura)",
+    subtitle: "Supervisión",
     icon: Eye,
     path: "/supervisor",
     color: "bg-secondary",
@@ -39,19 +39,6 @@ export function LoginScreen() {
           "var(--pc-safe-top-effective, env(safe-area-inset-top, 0px))",
       }}
     >
-      <button
-        onClick={() => navigate("/layout-isolated")}
-        className="absolute top-3 right-3 z-20 px-3 py-1.5 rounded-lg text-[12px] text-white/90 active:opacity-70"
-        style={{
-          background: "rgba(255,255,255,0.14)",
-          border: "1px solid rgba(255,255,255,0.22)",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
-        }}
-      >
-        Aislada
-      </button>
-
       {/* Ambient light circles */}
       <div className="absolute top-[-20%] left-[-30%] w-[80vw] h-[80vw] rounded-full bg-[#AB1738]/8 blur-3xl" />
       <div className="absolute bottom-[30%] right-[-20%] w-[60vw] h-[60vw] rounded-full bg-white/[0.03] blur-3xl" />
