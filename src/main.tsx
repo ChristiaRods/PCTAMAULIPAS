@@ -21,9 +21,9 @@ const setAppHeight = () => {
   );
   if (candidates.length === 0) return;
 
-  // On iOS Safari/PWA, visualViewport can get stuck smaller after keyboard.
-  // Use the largest stable layout height so the shell never remains truncated.
-  const viewportHeight = Math.max(...candidates);
+  // Use the smallest visible viewport to avoid oversizing the app shell,
+  // which can render a persistent bottom band in iOS PWA standalone mode.
+  const viewportHeight = Math.min(...candidates);
   document.documentElement.style.setProperty(
     "--app-height",
     `${Math.round(viewportHeight)}px`,
