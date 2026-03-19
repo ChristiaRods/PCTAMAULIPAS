@@ -3,7 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "./RouterContext";
 import { LiquidGlassNav, type NavView } from "./LiquidGlassNav";
 
-const LAB_NAV_SPACE = "calc(var(--pc-nav-bottom-offset, 8px) + 88px)";
+const LAB_NAV_SPACE = "calc(var(--pc-nav-bottom-offset, 0px) + 88px)";
 const LAB_TOP_SPACE = "calc(var(--pc-safe-top-effective, env(safe-area-inset-top, 0px)) + 96px)";
 
 type LabCard = {

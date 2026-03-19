@@ -53,7 +53,7 @@ function applySafeAreaVariables() {
 
   const effectiveTop = viewportExcludesInsets ? 0 : insets.top;
   const effectiveBottom = viewportExcludesInsets ? 0 : insets.bottom;
-  const navBottomOffset = standalone ? 8 : 12;
+  const navBottomOffset = standalone ? 0 : 8;
 
   const rootStyle = document.documentElement.style;
   rootStyle.setProperty("--pc-safe-top-raw", `${insets.top}px`);

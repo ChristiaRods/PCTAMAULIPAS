@@ -430,7 +430,7 @@ export function AuditDetail() {
 
   if (!item) {
     return (
-      <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
+      <div className="h-full bg-[#F2F2F7] flex flex-col">
         <AppHeader title="Detalle del Evento" />
         <div className="flex-1 flex items-center justify-center">
           <p className="text-[16px] text-[#636366]">Evento no encontrado</p>
@@ -486,7 +486,7 @@ export function AuditDetail() {
     : (item as Reporte911).conteos.evidencias;
 
   return (
-    <div className="min-h-screen bg-[#F2F2F7] flex flex-col pb-8">
+    <div className="h-full bg-[#F2F2F7] flex flex-col pb-8">
       <AppHeader title="Detalle del Evento" />
 
       {/* ═══ Original Post Card ═══ */}

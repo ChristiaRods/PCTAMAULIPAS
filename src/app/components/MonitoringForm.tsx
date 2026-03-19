@@ -325,7 +325,7 @@ export function MonitoringForm() {
   const tiposActividad = ["Inspección visual", "Evacuación preventiva", "Distribución de apoyo", "Verificación de refugio", "Patrullaje de zona", "Reporte a coordinación"];
 
   return (
-    <div className="min-h-screen bg-background flex flex-col pb-24">
+    <div className="h-full bg-background flex flex-col pb-24">
       <Toaster position="top-center" />
       <AppHeader title="Nuevo Monitoreo" />
 
