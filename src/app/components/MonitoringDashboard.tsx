@@ -49,7 +49,7 @@ export function MonitoringDashboard() {
   );
 
   return (
-    <div className="h-full bg-background flex flex-col overflow-hidden">
+    <div className="min-h-screen bg-background flex flex-col">
       <AppHeader title="Monitoreos" showBack={false} onSettingsPress={() => navigate("/settings")}>
         <div className="relative">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" strokeWidth={2} />

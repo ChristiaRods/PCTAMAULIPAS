@@ -33,7 +33,7 @@ export function LoginScreen() {
   const navigate = useNavigate();
 
   return (
-    <div className="h-full bg-gradient-to-b from-[#1A0408] via-[#4A0C1A] to-[#8C1530] flex flex-col relative overflow-hidden"
+    <div className="min-h-screen bg-gradient-to-b from-[#1A0408] via-[#4A0C1A] to-[#8C1530] flex flex-col relative overflow-hidden"
       style={{
         paddingTop:
           "var(--pc-safe-top-effective, env(safe-area-inset-top, 0px))",

@@ -111,11 +111,7 @@ export function LiquidGlassNav({
     <div
       data-debug-id="liquid-nav"
       data-debug-nav-mode={layoutMode}
-      className="fixed left-4 right-4 z-50 overflow-visible pointer-events-none"
-      style={{
-        bottom:
-          "calc(var(--pc-nav-bottom-offset, 0px) - var(--pc-safe-bottom-excluded-delta, 0px))",
-      }}
+      className="fixed bottom-6 left-4 right-4 z-50 overflow-visible pointer-events-none"
     >
       {navCore}
     </div>

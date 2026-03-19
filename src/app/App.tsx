@@ -10,7 +10,6 @@ import { SettingsScreen } from "./components/SettingsScreen";
 import { LayoutLabScreen } from "./components/LayoutLabScreen";
 import { LayoutIsolatedScreen } from "./components/LayoutIsolatedScreen";
 import { PWAManager } from "./components/PWAManager";
-import { LayoutDebugPanel } from "./components/LayoutDebugPanel";
 import { useEffect } from "react";
 import React from "react";
 import {
@@ -137,7 +136,6 @@ export default function App() {
         initialPath={hasDeepLink ? "/supervisor" : undefined}
       />
       <PWAManager />
-      <LayoutDebugPanel />
     </ErrorBoundary>
   );
 }

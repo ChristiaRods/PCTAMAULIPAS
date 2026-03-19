@@ -1,29 +1,3 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
-
-/* ─── PWA viewport baseline ─── */
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  overscroll-behavior: none;
-  -webkit-overflow-scrolling: touch;
-  background: #F2F2F7;
-}
-
-#root {
-  width: 100%;
-  height: var(--app-height, 100svh);
-  min-height: var(--app-height, 100svh);
-}
-
-.min-h-screen {
-  min-height: var(--app-height, 100svh) !important;
-}
-
-.h-screen {
-  height: var(--app-height, 100svh) !important;
-}

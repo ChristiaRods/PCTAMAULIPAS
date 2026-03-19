@@ -1093,7 +1093,7 @@ export function SupervisorNotifications() {
   const showFeed = navView === "home" || navView === "reportes" || navView === "monitoreo";
 
   return (
-    <div className="h-full bg-[#F2F2F7] flex flex-col overflow-hidden">
+    <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
       <AppHeader title={sectionTitle} showBack={false} />
 
       {/* ═══ Notifications View ═══ */}

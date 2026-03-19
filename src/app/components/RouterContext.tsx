@@ -7,7 +7,6 @@ interface RouterContextType {
   navigate: (to: string) => void;
   goBack: () => void;
   canGoBack: boolean;
-  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 const RouterContext = createContext<RouterContextType>({
@@ -16,7 +15,6 @@ const RouterContext = createContext<RouterContextType>({
   navigate: () => {},
   goBack: () => {},
   canGoBack: false,
-  scrollContainerRef: { current: null },
 });
 
 export function useNavigate() {
@@ -33,10 +31,6 @@ export function useParams<T extends Record<string, string> = Record<string, stri
 
 export function useGoBack() {
   return useContext(RouterContext).goBack;
-}
-
-export function useScrollContainer() {
-  return useContext(RouterContext).scrollContainerRef;
 }
 
 interface RouteConfig {
@@ -106,9 +100,6 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
   const [path, setPath] = useState(initialPath || "/");
   const [history, setHistory] = useState<string[]>([]);
   const scrollHistory = useRef<number[]>([]);
-  
-  /* ─── Scroll container ref (the current screen div is the scroll container) ─── */
-  const scrollContainerRefStable = useRef<HTMLDivElement>(null);
 
   /*
    * showPrevScreen has 2 states now:
@@ -169,14 +160,9 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
   }, []);
 
   const navigate = useCallback((to: string) => {
-    const sc = scrollContainerRefStable.current;
-    scrollHistory.current.push(sc ? sc.scrollTop : 0);
+    scrollHistory.current.push(window.scrollY);
     setHistory((prev) => [...prev, pathRef.current]);
     setPath(to);
-    // Scroll new screen to top
-    requestAnimationFrame(() => {
-      if (scrollContainerRefStable.current) scrollContainerRefStable.current.scrollTop = 0;
-    });
   }, []);
 
   const goBack = useCallback(() => {
@@ -189,7 +175,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
         if (savedScroll !== undefined) {
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-              if (scrollContainerRefStable.current) scrollContainerRefStable.current.scrollTop = savedScroll;
+              window.scrollTo(0, savedScroll);
             });
           });
         }
@@ -282,7 +268,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
     });
 
     // ── 3. Restore scroll ──
-    if (scrollContainerRefStable.current) scrollContainerRefStable.current.scrollTop = savedScroll;
+    window.scrollTo(0, savedScroll);
 
     // ── 4. Wait for browser to lay out + paint the new content ──
     requestAnimationFrame(() => {
@@ -473,7 +459,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
   const previousParams = previousMatch?.params || {};
 
   const currentCtx = React.useMemo<RouterContextType>(
-    () => ({ path, params: currentParams, navigate, goBack, canGoBack, scrollContainerRef: scrollContainerRefStable }),
+    () => ({ path, params: currentParams, navigate, goBack, canGoBack }),
     [path, currentParams, navigate, goBack, canGoBack]
   );
 
@@ -484,12 +470,11 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
       navigate,
       goBack,
       canGoBack: history.length > 1,
-      scrollContainerRef: scrollContainerRefStable,
     }),
     [previousPath, previousParams, navigate, goBack, history.length]
   );
 
-  const isPrevMounted = SWIPE_BACK_ENABLED && showPrevScreen !== false;
+  const isPrevMounted = showPrevScreen !== false;
 
   /**
    * ★ Keep frozenPrevRef updated every render WHILE no gesture is active.
@@ -512,7 +497,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
       ref={containerRef}
       data-debug-id="router-shell"
       className="relative"
-      style={{ height: "var(--app-height, 100svh)", overflow: "hidden" }}
+      style={{ minHeight: "100dvh", overflowX: "clip" as any }}
     >
       {/* ═══ Previous screen (behind) — uses FROZEN ref, survives history changes ═══ */}
       {isPrevMounted && frozenPrevRef.current && (
@@ -542,22 +527,15 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
         </div>
       )}
 
-      {/* ═══ Current screen (on top) — THIS is the scroll container ═══ */}
+      {/* ═══ Current screen (on top) ═══ */}
       <div
-        ref={(el) => {
-          (currentScreenRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-          (scrollContainerRefStable as React.MutableRefObject<HTMLDivElement | null>).current = el;
-        }}
+        ref={currentScreenRef}
         data-debug-id="router-current"
         data-debug-path={path}
         className="relative z-20"
         style={{
-          height: "var(--app-height, 100svh)",
-          overflowY: "auto",
-          overflowX: "hidden",
-          overscrollBehaviorY: "auto",
-          WebkitOverflowScrolling: "touch" as any,
-          background: "#F2F2F7",
+          minHeight: "100dvh",
+          background: "#F8F6F3",
         }}
       >
         <FrozenScreen Component={CurrentComponent!} contextValue={currentCtx} />

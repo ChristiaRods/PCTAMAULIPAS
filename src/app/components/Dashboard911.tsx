@@ -585,7 +585,7 @@ export function Dashboard911() {
   const [activeTab, setActiveTab] = useState<TabId>("reportes");
 
   return (
-    <div className="h-full bg-[#F2F2F7] flex flex-col overflow-hidden">
+    <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
       <AppHeader title="Personal de Campo" showBack={false} onSettingsPress={() => navigate("/settings")} />
 
       <div

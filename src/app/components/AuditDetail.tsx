@@ -5,7 +5,7 @@ import {
   CheckCircle2, FileText, BarChart3, Droplets, Mic, Video, File,
   ChevronRight,
 } from "lucide-react";
-import { useParams, useScrollContainer } from "./RouterContext";
+import { useParams } from "./RouterContext";
 import { useState, useEffect, useRef } from "react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { ImageLightbox, type LightboxData } from "./ImageLightbox";
@@ -420,8 +420,7 @@ function PersonChip({ label, value }: { label: string; value: number }) {
 
 /* ─── Main ─── */
 export function AuditDetail() {
-  const scrollContainerRef = useScrollContainer();
-  useEffect(() => { if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0; }, []);
+  useEffect(() => { window.scrollTo(0, 0); }, []);
   const { id } = useParams();
   const [showAllThread, setShowAllThread] = useState(false);
   const [lightboxData, setLightboxData] = useState<LightboxData | null>(null);
@@ -430,7 +429,7 @@ export function AuditDetail() {
 
   if (!item) {
     return (
-      <div className="h-full bg-[#F2F2F7] flex flex-col">
+      <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
         <AppHeader title="Detalle del Evento" />
         <div className="flex-1 flex items-center justify-center">
           <p className="text-[16px] text-[#636366]">Evento no encontrado</p>
@@ -486,7 +485,7 @@ export function AuditDetail() {
     : (item as Reporte911).conteos.evidencias;
 
   return (
-    <div className="h-full bg-[#F2F2F7] flex flex-col">
+    <div className="min-h-screen bg-[#F2F2F7] flex flex-col pb-8">
       <AppHeader title="Detalle del Evento" />
 
       {/* ═══ Original Post Card ═══ */}
