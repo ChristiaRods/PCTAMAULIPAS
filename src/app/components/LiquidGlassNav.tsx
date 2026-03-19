@@ -137,7 +137,7 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
     <div
       data-debug-id="liquid-nav"
       className="fixed left-4 right-4 z-50 overflow-visible pointer-events-none"
-      style={{ bottom: "max(env(safe-area-inset-bottom, 0px), 8px)" }}
+      style={{ bottom: "8px" }}
     >
         <div
           ref={navContainerRef}
