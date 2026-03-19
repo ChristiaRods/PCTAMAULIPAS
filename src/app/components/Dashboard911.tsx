@@ -585,7 +585,7 @@ export function Dashboard911() {
   const [activeTab, setActiveTab] = useState<TabId>("reportes");
 
   return (
-    <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
+    <div className="h-full bg-[#F2F2F7] flex flex-col overflow-hidden">
       <AppHeader title="Personal de Campo" showBack={false} onSettingsPress={() => navigate("/settings")} />
 
       <div
@@ -1315,7 +1315,7 @@ function ReportFormView() {
   }, []);
 
   return (
-    <PullToRefresh onRefresh={handleRefresh} className="flex-1 pb-28">
+    <PullToRefresh onRefresh={handleRefresh} className="flex-1 min-h-0 pb-6">
       {/* ═══ Map Picker Modal ═══ */}
       {showMapPicker && (
         <MapPickerModal

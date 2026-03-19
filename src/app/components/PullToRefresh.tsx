@@ -91,7 +91,10 @@ export function PullToRefresh({
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      style={{ WebkitOverflowScrolling: "touch" }}
+      style={{
+        WebkitOverflowScrolling: "touch",
+        overscrollBehaviorY: "contain",
+      }}
     >
       {/* Spinner area */}
       <div

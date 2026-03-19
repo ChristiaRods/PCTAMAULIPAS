@@ -503,7 +503,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
   // When isPrevMounted is true → frozenPrevRef stays as-is (frozen)
 
   return (
-    <div ref={containerRef} className="relative" style={{ height: "100dvh", overflow: "hidden" }}>
+    <div ref={containerRef} className="relative" style={{ height: "100%", overflow: "hidden" }}>
       {/* ═══ Previous screen (behind) — uses FROZEN ref, survives history changes ═══ */}
       {isPrevMounted && frozenPrevRef.current && (
         <div
@@ -540,7 +540,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
         }}
         className="relative z-20"
         style={{
-          height: "100dvh",
+          height: "100%",
           overflowY: "auto",
           overflowX: "hidden",
           overscrollBehaviorY: "contain",

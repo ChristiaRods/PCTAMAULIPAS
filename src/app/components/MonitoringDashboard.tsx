@@ -49,7 +49,7 @@ export function MonitoringDashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-full bg-background flex flex-col overflow-hidden">
       <AppHeader title="Monitoreos" showBack={false} onSettingsPress={() => navigate("/settings")}>
         <div className="relative">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" strokeWidth={2} />
@@ -73,7 +73,7 @@ export function MonitoringDashboard() {
           await fetchServerMonitoring();
           loadMonitoring();
         }}
-        className="flex-1 px-4 space-y-2.5"
+        className="flex-1 min-h-0 px-4 space-y-2.5 pb-6"
       >
         {filtered.map((mon) => (
           <div
@@ -102,8 +102,6 @@ export function MonitoringDashboard() {
             </div>
           </div>
         ))}
-        {/* Spacer para safe-area-inset-bottom + FAB */}
-        <div style={{ height: "calc(env(safe-area-inset-bottom, 0px) + 96px)" }} />
       </PullToRefresh>
 
       {/* FAB */}
@@ -111,7 +109,7 @@ export function MonitoringDashboard() {
         onClick={() => navigate("/monitoreo/nuevo")}
         className="fixed right-6 flex items-center gap-2 px-5 py-3.5 rounded-full bg-primary text-white active:scale-95 transition-transform z-40"
         style={{
-          bottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)",
+          bottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
           boxShadow: "0 2px 8px rgba(171,23,56,0.25), 0 12px 28px rgba(171,23,56,0.2)",
         }}
       >

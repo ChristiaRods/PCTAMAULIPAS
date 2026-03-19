@@ -608,7 +608,7 @@ function NotificationsView({ onNavigateToFeed }: { onNavigateToFeed: (feedId: st
   const totalItems = filteredNotifs.length + filteredServerNotifs.length;
 
   return (
-    <PullToRefresh onRefresh={handleRefreshNotifs} className="flex-1">
+    <PullToRefresh onRefresh={handleRefreshNotifs} className="flex-1 min-h-0">
       {/* Unread badge + Mark all */}
       <div className="flex items-center justify-between px-4 pt-3 pb-2">
         <div className="flex items-center gap-2">
@@ -916,8 +916,8 @@ function NotificationsView({ onNavigateToFeed }: { onNavigateToFeed: (feedId: st
         </div>
       )}
 
-      {/* ─── Spacer para LiquidGlassNav + safe-area-inset-bottom ─── */}
-      <div style={{ height: "calc(env(safe-area-inset-bottom, 0px) + 96px)" }} />
+      {/* Spacer discreto para evitar choque con la barra inferior */}
+      <div style={{ height: "calc(env(safe-area-inset-bottom, 0px) + 20px)" }} />
     </PullToRefresh>
   );
 }
@@ -1063,7 +1063,7 @@ export function SupervisorNotifications() {
   const showFeed = navView === "home" || navView === "reportes" || navView === "monitoreo";
 
   return (
-    <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
+    <div className="h-full bg-[#F2F2F7] flex flex-col overflow-hidden">
       <AppHeader title={sectionTitle} showBack={false} />
 
       {/* ═══ Notifications View ═══ */}
@@ -1080,7 +1080,7 @@ export function SupervisorNotifications() {
             await fetchServerReports();
             loadFromCache();
           }}
-          className="flex-1"
+          className="flex-1 min-h-0"
         >
           {/* ═══ 1. BANNER — Modo Solo Lectura (sólido) ═══ */}
           <div className="mx-4 mt-3 mb-3 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-[#FFF1F3] border border-[#FECDD3]">
@@ -1138,7 +1138,7 @@ export function SupervisorNotifications() {
           {/* ═══ FEED ═══ */}
           <div
             className="flex-1 flex flex-col gap-2"
-            style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 96px)" }}
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}
           >
             {/* ── Separador de fecha ── */}
             <div className="flex items-center gap-3 px-4 mb-0 mt-1">
@@ -1162,7 +1162,7 @@ export function SupervisorNotifications() {
 
             {/* ── End of feed indicator ── */}
             {filtered.length > 0 && (
-              <div className="flex items-center justify-center py-6 pb-8">
+              <div className="flex items-center justify-center py-6 pb-2">
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-px bg-[#D1D1D6]" />
                   <span className="text-[12px] text-[#C7C7CC]" style={{ fontWeight: 400 }}>

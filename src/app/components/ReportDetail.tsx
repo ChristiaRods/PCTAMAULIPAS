@@ -39,7 +39,7 @@ export function ReportDetail() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col pb-48">
+    <div className="min-h-screen bg-background flex flex-col pb-24">
       <Toaster position="top-center" />
       <AppHeader title={`Reporte ${id || "911-2026-0147"}`} />
 
