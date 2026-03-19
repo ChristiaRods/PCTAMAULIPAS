@@ -545,7 +545,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
           overflowX: "hidden",
           overscrollBehaviorY: "contain",
           WebkitOverflowScrolling: "touch" as any,
-          background: "#F8F6F3",
+          background: "#F2F2F7",
         }}
       >
         <FrozenScreen Component={CurrentComponent!} contextValue={currentCtx} />
