@@ -40,7 +40,7 @@ export function LoginScreen() {
       }}
     >
       <button
-        onClick={() => navigate("/layout-lab")}
+        onClick={() => navigate("/layout-isolated")}
         className="absolute top-3 right-3 z-20 px-3 py-1.5 rounded-lg text-[12px] text-white/90 active:opacity-70"
         style={{
           background: "rgba(255,255,255,0.14)",
@@ -49,7 +49,7 @@ export function LoginScreen() {
           WebkitBackdropFilter: "blur(8px)",
         }}
       >
-        Layout Lab
+        Aislada
       </button>
 
       {/* Ambient light circles */}

@@ -8,6 +8,7 @@ import { SupervisorNotifications } from "./components/SupervisorNotifications";
 import { AuditDetail } from "./components/AuditDetail";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { LayoutLabScreen } from "./components/LayoutLabScreen";
+import { LayoutIsolatedScreen } from "./components/LayoutIsolatedScreen";
 import { PWAManager } from "./components/PWAManager";
 import { LayoutDebugPanel } from "./components/LayoutDebugPanel";
 import { useEffect } from "react";
@@ -60,6 +61,7 @@ const routes = [
   { path: "/supervisor/:id", component: AuditDetail },
   { path: "/settings", component: SettingsScreen },
   { path: "/layout-lab", component: LayoutLabScreen },
+  { path: "/layout-isolated", component: LayoutIsolatedScreen },
 ];
 
 /* ─── iOS/Android PWA meta tags (injected once) ─── */
