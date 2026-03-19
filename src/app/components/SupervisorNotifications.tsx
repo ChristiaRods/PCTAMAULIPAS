@@ -916,8 +916,8 @@ function NotificationsView({ onNavigateToFeed }: { onNavigateToFeed: (feedId: st
         </div>
       )}
 
-      {/* Spacer discreto para evitar choque con la barra inferior */}
-      <div style={{ height: "calc(env(safe-area-inset-bottom, 0px) + 20px)" }} />
+      {/* Spacer consistente para el dock inferior */}
+      <div style={{ height: "var(--nav-dock-space)" }} />
     </PullToRefresh>
   );
 }
@@ -1138,7 +1138,7 @@ export function SupervisorNotifications() {
           {/* ═══ FEED ═══ */}
           <div
             className="flex-1 flex flex-col gap-2"
-            style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}
+            style={{ paddingBottom: "var(--nav-dock-space)" }}
           >
             {/* ── Separador de fecha ── */}
             <div className="flex items-center gap-3 px-4 mb-0 mt-1">

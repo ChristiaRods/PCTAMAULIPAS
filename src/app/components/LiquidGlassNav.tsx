@@ -137,13 +137,14 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
     <div
       className="fixed inset-x-0 bottom-0 z-50 pointer-events-none"
       style={{
-        paddingBottom: "env(safe-area-inset-bottom, 0px)",
-        background:
-          "linear-gradient(to top, rgba(242,242,247,0.96) 0%, rgba(242,242,247,0.72) 42%, rgba(242,242,247,0) 100%)",
+        background: "transparent",
       }}
     >
       <div
-        className="px-4 pb-2 pointer-events-none"
+        className="px-4 pointer-events-none"
+        style={{
+          paddingBottom: "max(4px, calc(env(safe-area-inset-bottom, 0px) - 24px))",
+        }}
       >
         <div
           ref={navContainerRef}
