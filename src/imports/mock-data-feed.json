@@ -1,0 +1,296 @@
+# INSTRUCCIONES PARA IA (VIBE CODING) — SOLO MOCK DATA + RENDER POR TIPO (SIN CAMBIAR UI)
+
+Tienes una app tipo Facebook con:
+- Feed en scroll infinito (publicaciones/cards)
+- Detalle de publicación al dar "Ver Detalle"
+- Hilo de Trazabilidad (timeline vertical) en el detalle
+- Media viewer tipo carrusel (1 de N) para imágenes/evidencias
+
+⚠️ REGLA CRÍTICA:
+NO CAMBIES NADA DEL WORK BUILDER / ESTRUCTURA / NAVEGACIÓN / LAYOUT / ESTILOS.
+No remaquetes componentes. No cambies jerarquías. No cambies la navegación. 
+SOLO:
+1) Agrega/ajusta el mock data para poblar el feed infinito
+2) Implementa el render condicional mínimo para diferenciar 2 tipos de publicación
+3) Asegura que los ejemplos visibles muestren los campos correctos (especialmente en MONITOREO)
+
+## 1) Dos tipos de publicación (cards)
+Existen exactamente 2 tipos:
+
+### A) Publicación "REPORTE 911"
+- Ya existe un ejemplo con layout definido (NO LO CAMBIES).
+- Solo asegúrate de que el feed tenga múltiples ejemplos 911 realistas (Tamaulipas).
+
+Campos típicos visibles (según UI existente):
+- Autor (nombre), rol ("Operador de Campo - 911"), badge NUEVA opcional, "Hace X min"
+- Chip/tipo discreto: "Reporte 911"
+- Folio: "911-AAAA-XXXX"
+- Estatus: "Nuevo Reporte", "En Atención", "Atendido", "Falso reporte", "No localizado" (chips)
+- Título del incidente (ej. "Incendio Estructural")
+- Ubicación (colonia/calle/municipio)
+- Extracto/descripción
+- Imagen principal + overlay "+N más"
+- Chips KPI: Personal, Unidades/Vehículos, At. Prehosp, Duración
+- Contadores: Actualizaciones, Evidencias, Actividades
+- CTA: Ver detalle
+
+Detalle (NO cambiar layout):
+- Foto(s)
+- KPIs
+- Mapa (si tu UI lo trae para 911)
+- Contadores
+- Hilo de Trazabilidad con múltiples registros (ej. 6–10)
+
+### B) Publicación "MONITOREO"
+- Debe verse con la MISMA estructura general de card (no inventes layouts distintos), pero con datos específicos del monitoreo.
+- Diferenciación DISCRETA: un chip pequeño o texto (ej. "Monitoreo").
+
+IMPORTANTE: El mock data de MONITOREO debe usar los campos reales del formulario capturado por el usuario:
+ETAPA 1 — Datos Generales:
+- fechaHoraRegistro
+- municipio (Tamaulipas)
+- localidad (Tamaulipas)
+- tipoMonitoreo (usar dropdown)
+- subtipoMonitoreo (usar dropdown)
+- datosMonitoreo (puede ser placeholder realista, ver ejemplo)
+- tipoAfectaciones (usar dropdown)
+- descripcionMonitoreo (texto)
+
+ETAPA 2 — Detalles:
+- conteoPersonas: hombres, mujeres, ninos, ninas, noIdentificados
+- totalPersonas = suma automática (en mock ya puede venir calculado)
+
+ETAPA 3 — Actividades:
+- actividades[] con: tipoActividad, descripcion (<=230 chars), fechaHora
+- contadorActividades (coherente con actividades)
+
+Evidencias:
+- evidencias[] con tipos: imagen, pdf, audio, video
+- En este perfil el usuario SOLO VISUALIZA, pero SÍ puede abrir/reproducir/descargar.
+(No mostrar inputs. Solo visor/preview como en 911.)
+
+Detalle de MONITOREO:
+- Mantén secciones/etapas (Datos Generales → Detalles → Actividades) como bloques/sections dentro del detalle (sin cambiar tu estructura actual; solo rellena campos).
+- Incluye también un Hilo de Trazabilidad más corto que 911 (ej. 3–6 registros).
+
+## 2) Restricción geográfica (OBLIGATORIA)
+TODO el mock data debe ser SOLO de Tamaulipas, México.
+Municipios grandes sugeridos (usa estos y similares):
+- Ciudad Victoria, Reynosa, Matamoros, Nuevo Laredo, Tampico, Ciudad Madero, Altamira, San Fernando, Valle Hermoso
+Ubicaciones y colonias deben sonar locales (ej. "Col. Centro", "Fracc. Las Flores", "Col. Mainero", etc.)
+NO uses otros estados ni ciudades fuera de Tamaulipas.
+
+## 3) Dropdowns (usar EXACTO estas opciones en el mock)
+### tipoMonitoreo (obligatorio usar una de estas):
+- Monitoreo Diario
+- Semana Santa
+- Temporada de Lluvias
+- Temporada Invernal
+- Incendios Forestales
+- 1er Periodo Vacacional
+- Evento Socio-Organizativo
+
+### subtipoMonitoreo (usar una de estas):
+- Datos Generales
+- Refugios y Evacuados
+- Atenciones y Traslados
+- Extraviados y Fallecidos
+- Rescates
+
+### tipoAfectaciones (usar una de estas):
+- Heridos
+- Damnificados
+- No localizados
+- Evacuados
+
+## 4) Estatus (Monitoreo debe tener MÁS estatus)
+No te limites solo a Activo/Cerrado.
+Define y usa (chips discretos) por ejemplo:
+- Activo
+- En seguimiento
+- En validación
+- Cerrado
+- Archivado
+(Usa variedad para que el feed se sienta vivo.)
+
+## 5) Reglas de presentación en el feed (sin tocar layout)
+- En cards de Monitoreo, asegúrate de que en el resumen se vean:
+  - chip "Monitoreo" (discreto)
+  - estatus
+  - fecha/hora
+  - municipio + localidad
+  - tipoMonitoreo + subtipoMonitoreo
+  - totalPersonas
+  - tipoAfectaciones
+  - contadores: Actividades y Evidencias
+  - si hay imágenes, mostrar preview como en 911 (1 principal + "+N más")
+
+Los KPIs específicos para Monitoreo deben usar estos chips (equivalentes visuales a los de 911):
+- Total personas
+- Afectaciones
+- Actividades
+- Evidencias
+
+## 6) Implementación esperada (técnico)
+- Crea un arreglo `feedItems[]` con mezcla 911 y Monitoreo (mínimo 18 items).
+- Asegura coherencia:
+  - Si evidencias.length = 5, el contador debe decir 5
+  - Si actividades.length = 3, el contador debe decir 3
+  - Si conteoPersonas suma 12, totalPersonas debe ser 12
+- Cada item debe tener `id`, `type` = "reporte911" | "monitoreo"
+- El detalle debe consumir el mismo item por id.
+- No dependas de APIs reales; todo mock local.
+
+---
+
+## 7) MOCK DATA (LISTO PARA PEGAR)
+Usa este JSON como base y si necesitas ampliar, clona y varía manteniendo Tamaulipas y dropdowns.
+
+```json
+{
+  "feedItems": [
+    {
+      "id": "911-2026-0147",
+      "type": "reporte911",
+      "isNew": true,
+      "createdAgo": "Hace 5 min",
+      "autor": { "nombre": "Carlos López Hernández", "iniciales": "CL", "rol": "Operador de Campo - 911" },
+      "estatus": "En Atención",
+      "tags": ["Nuevo Reporte", "Reporte 911"],
+      "folio": "911-2026-0147",
+      "titulo": "Incendio Estructural",
+      "descripcionCorta": "Se reporta columna de humo visible desde edificio de 2 pisos en esquina. Vecinos alertaron presencia de personas en planta alta.",
+      "ubicacionTexto": "Col. Centro, Calle 5a Norte #412 — Ciudad Victoria",
+      "coords": { "lat": 23.7369, "lng": -99.1411 },
+      "kpis": { "personal": 6, "unidades": 2, "atencionesPrehosp": 1, "duracionMin": 75 },
+      "conteos": { "actualizaciones": 8, "actividades": 4, "evidencias": 5 },
+      "media": [
+        { "kind": "image", "src": "mock://911/victoria/incendio_01.jpg" },
+        { "kind": "image", "src": "mock://911/victoria/incendio_02.jpg" },
+        { "kind": "video", "src": "mock://911/victoria/incendio_video_01.mp4" }
+      ],
+      "trazabilidad": [
+        { "actor": "Sistema Central", "tipo": "Sistema", "hora": "14:20", "mensaje": "Reporte recibido del Centro de Emergencias 911. Se genera folio y se asigna al Centro Regional Victoria." },
+        { "actor": "Coordinación Regional", "tipo": "Sistema", "hora": "14:25", "mensaje": "Reporte asignado a Operador Carlos López Hernández. Notificación enviada a app móvil." },
+        { "actor": "Carlos López Hernández", "tipo": "Estatus", "hora": "14:32", "mensaje": "Reporte aceptado. En camino con Unidad 07. ETA 8 minutos." },
+        { "actor": "GPS Automático", "tipo": "Ubicación", "hora": "14:38", "mensaje": "Llegada confirmada. Coordenadas registradas. Distancia al punto reportado: 42 m." }
+      ]
+    },
+
+    {
+      "id": "MON-2026-0008",
+      "type": "monitoreo",
+      "isNew": true,
+      "createdAgo": "Hace 12 min",
+      "autor": { "nombre": "María Fernanda Salinas", "iniciales": "MS", "rol": "Operador de Campo - Monitoreo" },
+      "estatus": "En seguimiento",
+      "tags": ["Monitoreo"],
+      "folio": "PC-2026-0008",
+      "titulo": "Monitoreo — Temporada de Lluvias",
+      "descripcionCorta": "Recorrido preventivo en zona baja; se observan encharcamientos y aumento de escurrimientos.",
+      "ubicacionTexto": "Fracc. Las Flores — Ciudad Victoria, Tamaulipas",
+      "coords": { "lat": 23.7452, "lng": -99.1513 },
+
+      "datosGenerales": {
+        "fechaHoraRegistro": "05/03/2026, 02:38 p.m.",
+        "municipio": "Ciudad Victoria",
+        "localidad": "Fracc. Las Flores",
+        "tipoMonitoreo": "Temporada de Lluvias",
+        "subtipoMonitoreo": "Datos Generales",
+        "datosMonitoreo": "Nivel de escurrimiento y puntos de riesgo (placeholder)",
+        "tipoAfectaciones": "Damnificados",
+        "descripcionMonitoreo": "Se detecta acumulación de agua en vialidades secundarias; se recomienda acordonar zonas con flujo rápido."
+      },
+
+      "detalles": {
+        "conteoPersonas": { "hombres": 3, "mujeres": 4, "ninos": 2, "ninas": 1, "noIdentificados": 0 },
+        "totalPersonas": 10
+      },
+
+      "actividades": [
+        { "tipoActividad": "Recorrido", "fechaHora": "05/03/2026 14:45", "descripcion": "Se realiza recorrido en puntos críticos y se documentan encharcamientos." },
+        { "tipoActividad": "Coordinación", "fechaHora": "05/03/2026 15:05", "descripcion": "Se notifica a Coordinación Regional para canalización preventiva de unidades." }
+      ],
+
+      "conteos": { "actividades": 2, "evidencias": 4 },
+
+      "media": [
+        { "kind": "image", "src": "mock://monitoreo/victoria/lluvias_01.jpg" },
+        { "kind": "image", "src": "mock://monitoreo/victoria/lluvias_02.jpg" }
+      ],
+
+      "evidencias": [
+        { "kind": "image", "nombre": "evidencia_01.jpg", "src": "mock://monitoreo/victoria/evidencia_01.jpg" },
+        { "kind": "image", "nombre": "evidencia_02.jpg", "src": "mock://monitoreo/victoria/evidencia_02.jpg" },
+        { "kind": "pdf", "nombre": "reporte_preventivo.pdf", "src": "mock://monitoreo/victoria/reporte_preventivo.pdf" },
+        { "kind": "audio", "nombre": "nota_voz_01.m4a", "src": "mock://monitoreo/victoria/nota_voz_01.m4a" }
+      ],
+
+      "trazabilidad": [
+        { "actor": "Sistema Central", "tipo": "Sistema", "hora": "14:38", "mensaje": "Monitoreo capturado y asociado a Centro Regional Victoria." },
+        { "actor": "María F. Salinas", "tipo": "Actividad", "hora": "14:45", "mensaje": "Actividad registrada: Recorrido en puntos críticos." },
+        { "actor": "Sistema Central", "tipo": "Evidencia", "hora": "14:52", "mensaje": "Evidencias anexadas: 2 imágenes, 1 PDF, 1 audio." }
+      ]
+    },
+
+    {
+      "id": "MON-2026-0012",
+      "type": "monitoreo",
+      "isNew": false,
+      "createdAgo": "Hace 1 h",
+      "autor": { "nombre": "Jorge Peña Ramírez", "iniciales": "JP", "rol": "Operador de Campo - Monitoreo" },
+      "estatus": "Activo",
+      "tags": ["Monitoreo"],
+      "folio": "PC-2026-0012",
+      "titulo": "Monitoreo — Semana Santa",
+      "descripcionCorta": "Alta concentración de personas en zona turística; se reportan atenciones menores y traslados preventivos.",
+      "ubicacionTexto": "Playa Miramar — Ciudad Madero, Tamaulipas",
+      "coords": { "lat": 22.2674, "lng": -97.7899 },
+
+      "datosGenerales": {
+        "fechaHoraRegistro": "06/03/2026, 11:10 a.m.",
+        "municipio": "Ciudad Madero",
+        "localidad": "Playa Miramar",
+        "tipoMonitoreo": "Semana Santa",
+        "subtipoMonitoreo": "Atenciones y Traslados",
+        "datosMonitoreo": "Atenciones menores en sitio (placeholder)",
+        "tipoAfectaciones": "Heridos",
+        "descripcionMonitoreo": "Se realizan acciones de prevención y atención básica; se mantiene monitoreo en accesos principales."
+      },
+
+      "detalles": {
+        "conteoPersonas": { "hombres": 5, "mujeres": 6, "ninos": 3, "ninas": 2, "noIdentificados": 1 },
+        "totalPersonas": 17
+      },
+
+      "actividades": [
+        { "tipoActividad": "Primeros Auxilios", "fechaHora": "06/03/2026 11:25", "descripcion": "Atención prehospitalaria menor a 2 personas por deshidratación leve." },
+        { "tipoActividad": "Traslado", "fechaHora": "06/03/2026 11:40", "descripcion": "Traslado preventivo a módulo de salud para valoración." },
+        { "tipoActividad": "Prevención", "fechaHora": "06/03/2026 12:00", "descripcion": "Recomendaciones a visitantes y reforzamiento de puntos de hidratación." }
+      ],
+
+      "conteos": { "actividades": 3, "evidencias": 3 },
+
+      "media": [
+        { "kind": "image", "src": "mock://monitoreo/madero/miramar_01.jpg" }
+      ],
+
+      "evidencias": [
+        { "kind": "image", "nombre": "miramar_01.jpg", "src": "mock://monitoreo/madero/miramar_01.jpg" },
+        { "kind": "video", "nombre": "miramar_video_01.mp4", "src": "mock://monitoreo/madero/miramar_video_01.mp4" },
+        { "kind": "pdf", "nombre": "bitacora_turno.pdf", "src": "mock://monitoreo/madero/bitacora_turno.pdf" }
+      ],
+
+      "trazabilidad": [
+        { "actor": "Sistema Central", "tipo": "Sistema", "hora": "11:10", "mensaje": "Monitoreo iniciado — Semana Santa." },
+        { "actor": "Jorge P. Ramírez", "tipo": "Actividad", "hora": "11:25", "mensaje": "Actividad registrada: Primeros Auxilios." },
+        { "actor": "Sistema Central", "tipo": "Evidencia", "hora": "11:50", "mensaje": "Evidencias anexadas: 1 imagen, 1 video, 1 PDF." },
+        { "actor": "Jorge P. Ramírez", "tipo": "Estatus", "hora": "12:05", "mensaje": "Estatus actualizado: Activo." }
+      ]
+    }
+
+    // ✅ DUPLICA/VARÍA HASTA LLEGAR A MÍNIMO 18 ITEMS
+    // Incluye más 911 y más Monitoreos con municipios grandes de Tamaulipas
+    // Asegura variedad de estatus y uso de dropdowns en Monitoreo
+  ]
+}

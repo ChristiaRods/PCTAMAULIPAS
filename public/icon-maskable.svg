@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- BG: same guindo gradient -->
+    <linearGradient id="bg" x1=".5" y1="0" x2=".5" y2="1">
+      <stop offset="0%" stop-color="#D42D50"/>
+      <stop offset="40%" stop-color="#AB1738"/>
+      <stop offset="100%" stop-color="#6A0B20"/>
+    </linearGradient>
+
+    <!-- Shield fill -->
+    <linearGradient id="sf" x1=".5" y1="0" x2=".5" y2="1">
+      <stop offset="0%" stop-color="#C72446"/>
+      <stop offset="55%" stop-color="#A81536"/>
+      <stop offset="100%" stop-color="#7E0F29"/>
+    </linearGradient>
+
+    <!-- Gold -->
+    <linearGradient id="au" x1=".2" y1="0" x2=".9" y2="1">
+      <stop offset="0%" stop-color="#EDD49C"/>
+      <stop offset="40%" stop-color="#D4A95A"/>
+      <stop offset="100%" stop-color="#B08542"/>
+    </linearGradient>
+
+    <!-- Top glow -->
+    <linearGradient id="glow" x1=".5" y1="0" x2=".5" y2=".6">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.14)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </linearGradient>
+
+    <!-- Vignette -->
+    <radialGradient id="vig" cx=".5" cy=".38" r=".68">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.02)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0.18)"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ============ BACKGROUND — full bleed for maskable ============ -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#vig)"/>
+  <ellipse cx="380" cy="280" rx="360" ry="280" fill="rgba(212,169,90,0.04)"/>
+
+  <!-- ============ SHIELD — scaled to maskable safe zone (~80%) ============ -->
+  <!-- Safe zone: center 820x820 area (102 margin each side) -->
+  <!-- Shield scaled proportionally smaller to fit within safe area -->
+  <path
+    d="M512 195
+       L700 275
+       C704 277, 708 282, 708 287
+       L708 480
+       C708 565, 668 634, 614 678
+       C570 716, 528 742, 512 750
+       C496 742, 454 716, 410 678
+       C356 634, 316 565, 316 480
+       L316 287
+       C316 282, 320 277, 324 275
+       Z"
+    fill="url(#sf)"
+    stroke="url(#au)"
+    stroke-width="7"
+    stroke-linejoin="round"
+  />
+
+  <!-- Shield inner glow -->
+  <path
+    d="M512 212
+       L692 288 692 478
+       C692 558, 654 622, 604 662
+       C562 696, 524 720, 512 728
+       C500 720, 462 696, 420 662
+       C370 622, 332 558, 332 478
+       L332 288Z"
+    fill="url(#glow)"
+  />
+
+  <!-- Gold divider -->
+  <rect x="396" y="528" width="232" height="4.5" rx="2.25" fill="url(#au)" opacity="0.5"/>
+
+  <!-- "PC" monogram -->
+  <text
+    x="512"
+    y="496"
+    text-anchor="middle"
+    dominant-baseline="central"
+    font-family="system-ui, -apple-system, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+    font-weight="900"
+    font-size="220"
+    fill="#FFFFFF"
+    letter-spacing="5"
+    opacity="0.97"
+  >PC</text>
+
+  <!-- Star -->
+  <path
+    d="M512 576
+       L524 612 564 612 532 636 544 672 512 648 480 672 492 636 460 612 500 612Z"
+    fill="url(#au)"
+    opacity="0.75"
+  />
+</svg>
