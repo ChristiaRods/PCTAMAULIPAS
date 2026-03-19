@@ -1183,7 +1183,7 @@ export function SupervisorNotifications() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
+    <div className="h-[100dvh] bg-[#F2F2F7] flex flex-col overflow-hidden">
       <AppHeader title={sectionTitle} showBack={false} />
 
       {/* ═══ Notifications View ═══ */}
