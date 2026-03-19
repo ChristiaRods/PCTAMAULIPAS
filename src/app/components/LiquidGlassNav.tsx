@@ -292,8 +292,8 @@ export function LiquidGlassNav({
     return (
       <div
         data-debug-id="liquid-nav"
-        className="relative z-50 overflow-visible pointer-events-none px-4 pt-2"
-        style={{ paddingBottom: "4px" }}
+        className="relative z-50 overflow-visible pointer-events-none px-4"
+        style={{ paddingBottom: 0 }}
       >
         {navCore}
       </div>
