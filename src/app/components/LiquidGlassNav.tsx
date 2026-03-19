@@ -14,12 +14,12 @@ const navItems: { id: NavView; icon: React.ElementType; label: string }[] = [
   { id: "home", icon: Home, label: "Inicio" },
   { id: "reportes", icon: FileText, label: "Reportes" },
   { id: "monitoreo", icon: Activity, label: "Monitoreo" },
-  { id: "notificaciones", icon: Bell, label: "Alertas" },
   { id: "menu", icon: Settings, label: "Ajustes" },
+  { id: "notificaciones", icon: Bell, label: "Alertas" },
 ];
 
-const coreNavItems = navItems.filter((item) => item.id !== "menu");
-const satelliteMenuItem = navItems.find((item) => item.id === "menu")!;
+const coreNavItems = navItems.filter((item) => item.id !== "notificaciones");
+const satelliteNavItem = navItems.find((item) => item.id === "notificaciones")!;
 
 const THEME = {
   activeColor: "#AB1738",
@@ -371,23 +371,6 @@ export function LiquidGlassNav({
                     : "color 0.28s ease, stroke-width 0.28s ease",
                 }}
               />
-              {item.id === "notificaciones" && notificationCount > 0 && !isActive && (
-                <motion.div
-                  layout
-                  className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] rounded-full px-1 flex items-center justify-center pointer-events-none"
-                  style={{
-                    background: "#EF4444",
-                    boxShadow: "0 1px 4px rgba(239,68,68,0.4)",
-                  }}
-                >
-                  <span
-                    className="text-[10px] text-white tabular-nums"
-                    style={{ fontWeight: 700, lineHeight: 1 }}
-                  >
-                    {notificationCount > 99 ? "99+" : notificationCount}
-                  </span>
-                </motion.div>
-              )}
             </motion.div>
 
             <motion.span
@@ -413,17 +396,17 @@ export function LiquidGlassNav({
     </div>
   );
 
-  const isSatelliteActive = currentView === satelliteMenuItem.id;
-  const SatelliteIcon = satelliteMenuItem.icon;
+  const isSatelliteActive = currentView === satelliteNavItem.id;
+  const SatelliteIcon = satelliteNavItem.icon;
 
   const navShell = (
     <div className="flex items-end gap-2.5 px-0 pointer-events-none">
       <div className="flex-1 min-w-0 pointer-events-auto">{navCore}</div>
       <motion.button
-        data-id={satelliteMenuItem.id}
-        aria-label={satelliteMenuItem.label}
+        data-id={satelliteNavItem.id}
+        aria-label={satelliteNavItem.label}
         aria-current={isSatelliteActive ? "page" : undefined}
-        onClick={() => onChangeView(satelliteMenuItem.id)}
+        onClick={() => onChangeView(satelliteNavItem.id)}
         whileTap={reduceMotion ? undefined : { scale: 0.94, y: 0.8 }}
         transition={reduceMotion ? { duration: 0.08 } : { type: "spring", stiffness: 500, damping: 28, mass: 0.62 }}
         className="relative z-20 mb-1.5 h-[68px] w-[68px] shrink-0 rounded-full overflow-hidden pointer-events-auto"
@@ -463,6 +446,23 @@ export function LiquidGlassNav({
                 : "color 0.28s ease, stroke-width 0.28s ease",
             }}
           />
+          {notificationCount > 0 && !isSatelliteActive && (
+            <motion.div
+              layout
+              className="absolute top-2 right-2 min-w-[18px] h-[18px] rounded-full px-1.5 flex items-center justify-center pointer-events-none"
+              style={{
+                background: "#EF4444",
+                boxShadow: "0 1px 4px rgba(239,68,68,0.4)",
+              }}
+            >
+              <span
+                className="text-[10px] text-white tabular-nums"
+                style={{ fontWeight: 700, lineHeight: 1 }}
+              >
+                {notificationCount > 99 ? "99+" : notificationCount}
+              </span>
+            </motion.div>
+          )}
         </motion.div>
       </motion.button>
     </div>

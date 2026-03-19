@@ -35,8 +35,59 @@ interface ServerNotification {
 }
 
 /* ─── Persist tab state across unmount/remount ─── */
-let _savedNavView: NavView = "home";
-const _tabScrollPositions: Record<string, number> = {};
+const SUPERVISOR_NAV_STATE_KEY = "pc-supervisor-nav-state-v1";
+
+function loadSupervisorNavState(): {
+  view: NavView;
+  scroll: Record<string, number>;
+} {
+  if (typeof window === "undefined") {
+    return { view: "home", scroll: {} };
+  }
+  try {
+    const raw = sessionStorage.getItem(SUPERVISOR_NAV_STATE_KEY);
+    if (!raw) {
+      return { view: "home", scroll: {} };
+    }
+    const parsed = JSON.parse(raw);
+    const view = parsed?.view as NavView;
+    const safeView: NavView =
+      view === "home" ||
+      view === "reportes" ||
+      view === "monitoreo" ||
+      view === "notificaciones"
+        ? view
+        : "home";
+    return {
+      view: safeView,
+      scroll:
+        parsed?.scroll && typeof parsed.scroll === "object"
+          ? parsed.scroll
+          : {},
+    };
+  } catch {
+    return { view: "home", scroll: {} };
+  }
+}
+
+const _initialSupervisorNavState = loadSupervisorNavState();
+let _savedNavView: NavView = _initialSupervisorNavState.view;
+const _tabScrollPositions: Record<string, number> = {
+  ..._initialSupervisorNavState.scroll,
+};
+
+function persistSupervisorNavState() {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(
+      SUPERVISOR_NAV_STATE_KEY,
+      JSON.stringify({
+        view: _savedNavView,
+        scroll: _tabScrollPositions,
+      }),
+    );
+  } catch (_e) {}
+}
 
 /* ─── Post Type Config ─── */
 function getTypeConfig(type: FeedItem["type"]) {
@@ -955,6 +1006,8 @@ export function SupervisorNotifications() {
   const setNavView = (v: NavView) => {
     const currentScrollContainer = getScrollContainer(navView);
     _tabScrollPositions[navView] = currentScrollContainer ? currentScrollContainer.scrollTop : 0;
+    _savedNavView = navView;
+    persistSupervisorNavState();
 
     // If user taps "menu" (Settings icon), navigate to /settings instead
     if (v === "menu") {
@@ -963,6 +1016,7 @@ export function SupervisorNotifications() {
     }
 
     _savedNavView = v;
+    persistSupervisorNavState();
     setNavViewRaw(v);
     // Restore target tab's scroll (or top if first visit)
     restoreScrollForView(v);
@@ -976,6 +1030,7 @@ export function SupervisorNotifications() {
       _savedNavView = "notificaciones";
       setNavViewRaw("notificaciones");
       _tabScrollPositions.notificaciones = 0;
+      persistSupervisorNavState();
       restoreScrollForView("notificaciones");
     }
   }, [restoreScrollForView]);
@@ -987,6 +1042,7 @@ export function SupervisorNotifications() {
       _savedNavView = "notificaciones";
       setNavViewRaw("notificaciones");
       _tabScrollPositions.notificaciones = 0;
+      persistSupervisorNavState();
       restoreScrollForView("notificaciones");
     });
     return unsubscribe;
@@ -999,6 +1055,25 @@ export function SupervisorNotifications() {
     didRestoreInitialScrollRef.current = true;
     restoreScrollForView(navView);
   }, [navView, getScrollContainer, restoreScrollForView]);
+
+  useEffect(() => {
+    const target = getScrollContainer(navView);
+    if (!target) return;
+
+    const onScroll = () => {
+      _tabScrollPositions[navView] = target.scrollTop;
+      _savedNavView = navView;
+      persistSupervisorNavState();
+    };
+
+    target.addEventListener("scroll", onScroll, { passive: true });
+    return () => target.removeEventListener("scroll", onScroll);
+  }, [navView, getScrollContainer]);
+
+  useEffect(() => {
+    _savedNavView = navView;
+    persistSupervisorNavState();
+  }, [navView]);
 
   const openLightbox = (item: FeedItem) => {
     if (item.images && item.images.length > 0) {
