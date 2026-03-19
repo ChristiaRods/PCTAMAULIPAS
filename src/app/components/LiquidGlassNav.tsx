@@ -141,6 +141,17 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
       }}
     >
       <div
+        className="absolute inset-x-0 bottom-0 pointer-events-none"
+        style={{
+          height: "calc(env(safe-area-inset-bottom, 0px) + 92px)",
+          background: "rgba(242,242,247,0.94)",
+          backdropFilter: "blur(28px) saturate(1.25)",
+          WebkitBackdropFilter: "blur(28px) saturate(1.25)",
+          borderTop: "1px solid rgba(188,149,91,0.12)",
+          boxShadow: "0 -6px 18px rgba(0,0,0,0.04)",
+        }}
+      />
+      <div
         className="px-4 pointer-events-none"
         style={{
           paddingBottom: "max(4px, calc(env(safe-area-inset-bottom, 0px) - 24px))",

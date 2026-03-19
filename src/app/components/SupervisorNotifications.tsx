@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { useNavigate, useScrollContainer } from "./RouterContext";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useNavigate } from "./RouterContext";
 import { AppHeader } from "./AppHeader";
 import { loadNotifPrefs } from "./SettingsView";
 import {
@@ -431,7 +431,13 @@ function buildMonitoringNotifications(monitoring: import("./monitoringStore").Su
 }
 
 /* ─── Notifications View ─── */
-function NotificationsView({ onNavigateToFeed }: { onNavigateToFeed: (feedId: string) => void }) {
+function NotificationsView({
+  onNavigateToFeed,
+  containerRef,
+}: {
+  onNavigateToFeed: (feedId: string) => void;
+  containerRef?: React.Ref<HTMLDivElement>;
+}) {
   const [reportNotifs, setReportNotifs] = useState<AppNotification[]>([]);
   const [notifications] = useState(mockNotifications);
   const [serverNotifs, setServerNotifs] = useState<ServerNotification[]>([]);
@@ -608,7 +614,7 @@ function NotificationsView({ onNavigateToFeed }: { onNavigateToFeed: (feedId: st
   const totalItems = filteredNotifs.length + filteredServerNotifs.length;
 
   return (
-    <PullToRefresh onRefresh={handleRefreshNotifs} className="flex-1 min-h-0">
+    <PullToRefresh onRefresh={handleRefreshNotifs} className="flex-1 min-h-0" containerRef={containerRef}>
       {/* Unread badge + Mark all */}
       <div className="flex items-center justify-between px-4 pt-3 pb-2">
         <div className="flex items-center gap-2">
@@ -925,27 +931,43 @@ function NotificationsView({ onNavigateToFeed }: { onNavigateToFeed: (feedId: st
 /* ─── Main ─── */
 export function SupervisorNotifications() {
   const navigate = useNavigate();
-  const scrollContainerRef = useScrollContainer();
   const [lightboxData, setLightboxData] = useState<LightboxData | null>(null);
   const [navView, setNavViewRaw] = useState<NavView>(_savedNavView);
+  const feedScrollRef = useRef<HTMLDivElement | null>(null);
+  const notificationsScrollRef = useRef<HTMLDivElement | null>(null);
+  const didRestoreInitialScrollRef = useRef(false);
+
+  const getScrollContainer = useCallback((view: NavView) => {
+    return view === "notificaciones" ? notificationsScrollRef.current : feedScrollRef.current;
+  }, []);
+
+  const restoreScrollForView = useCallback((view: NavView) => {
+    const applyScroll = () => {
+      const target = getScrollContainer(view);
+      if (!target) return;
+      target.scrollTop = _tabScrollPositions[view] || 0;
+    };
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(applyScroll);
+    });
+  }, [getScrollContainer]);
 
   /* Persist tab changes to module-level variable */
   const setNavView = (v: NavView) => {
+    const currentScrollContainer = getScrollContainer(navView);
+    _tabScrollPositions[navView] = currentScrollContainer ? currentScrollContainer.scrollTop : 0;
+
     // If user taps "menu" (Settings icon), navigate to /settings instead
     if (v === "menu") {
       navigate("/settings");
       return;
     }
-    
-    // Save current tab's scroll position before switching
-    const sc = scrollContainerRef.current;
-    _tabScrollPositions[navView] = sc ? sc.scrollTop : 0;
+
     _savedNavView = v;
     setNavViewRaw(v);
     // Restore target tab's scroll (or top if first visit)
-    requestAnimationFrame(() => {
-      if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = _tabScrollPositions[v] || 0;
-    });
+    restoreScrollForView(v);
   };
 
   /* ─── Deep link: check for pending notification on mount ─── */
@@ -955,9 +977,10 @@ export function SupervisorNotifications() {
       console.log("[Supervisor] Deep link notification:", pendingId);
       _savedNavView = "notificaciones";
       setNavViewRaw("notificaciones");
-      if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+      _tabScrollPositions.notificaciones = 0;
+      restoreScrollForView("notificaciones");
     }
-  }, []);
+  }, [restoreScrollForView]);
 
   /* ─── Deep link: listen for SW postMessage (app already open) ─── */
   useEffect(() => {
@@ -965,10 +988,19 @@ export function SupervisorNotifications() {
       console.log("[Supervisor] SW message — switching to Alertas:", notificationId);
       _savedNavView = "notificaciones";
       setNavViewRaw("notificaciones");
-      if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+      _tabScrollPositions.notificaciones = 0;
+      restoreScrollForView("notificaciones");
     });
     return unsubscribe;
-  }, []);
+  }, [restoreScrollForView]);
+
+  useEffect(() => {
+    if (didRestoreInitialScrollRef.current) return;
+    const target = getScrollContainer(navView);
+    if (!target) return;
+    didRestoreInitialScrollRef.current = true;
+    restoreScrollForView(navView);
+  }, [navView, getScrollContainer, restoreScrollForView]);
 
   const openLightbox = (item: FeedItem) => {
     if (item.images && item.images.length > 0) {
@@ -1070,6 +1102,7 @@ export function SupervisorNotifications() {
       {navView === "notificaciones" && (
         <NotificationsView
           onNavigateToFeed={(feedId) => navigate(`/supervisor/${feedId}`)}
+          containerRef={notificationsScrollRef}
         />
       )}
 
@@ -1081,6 +1114,7 @@ export function SupervisorNotifications() {
             loadFromCache();
           }}
           className="flex-1 min-h-0"
+          containerRef={feedScrollRef}
         >
           {/* ═══ 1. BANNER — Modo Solo Lectura (sólido) ═══ */}
           <div className="mx-4 mt-3 mb-3 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-[#FFF1F3] border border-[#FECDD3]">

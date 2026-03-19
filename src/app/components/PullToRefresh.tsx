@@ -9,12 +9,14 @@ interface PullToRefreshProps {
   onRefresh: () => Promise<void>;
   children: React.ReactNode;
   className?: string;
+  containerRef?: React.Ref<HTMLDivElement>;
 }
 
 export function PullToRefresh({
   onRefresh,
   children,
   className = "",
+  containerRef,
 }: PullToRefreshProps) {
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -24,6 +26,19 @@ export function PullToRefresh({
     active: boolean;
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const setContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      scrollRef.current = node;
+      if (!containerRef) return;
+      if (typeof containerRef === "function") {
+        containerRef(node);
+        return;
+      }
+      (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+    },
+    [containerRef],
+  );
 
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
@@ -86,7 +101,7 @@ export function PullToRefresh({
 
   return (
     <div
-      ref={scrollRef}
+      ref={setContainerRef}
       className={`overflow-y-auto ${className}`}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
