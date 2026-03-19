@@ -477,7 +477,7 @@ function CategoryDetail({
       {/* Header */}
       <SettingsHeader
         title={title}
-        backLabel="Configuración"
+        backLabel="Ajustes"
         onBack={onBack}
       />
 
@@ -920,7 +920,7 @@ export function SettingsView({ onClose }: { onClose?: () => void }) {
         {/* ─── Inline header when used as overlay with onClose ─── */}
         {onClose && (
           <SettingsHeader
-            title="Configuración"
+            title="Ajustes"
             onBack={onClose}
           />
         )}
