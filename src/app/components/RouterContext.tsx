@@ -506,7 +506,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
     <div
       ref={containerRef}
       className="relative"
-      style={{ height: "var(--app-height, 100dvh)", overflow: "hidden" }}
+      style={{ height: "var(--app-height, 100svh)", overflow: "hidden" }}
     >
       {/* ═══ Previous screen (behind) — uses FROZEN ref, survives history changes ═══ */}
       {isPrevMounted && frozenPrevRef.current && (
@@ -544,7 +544,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
         }}
         className="relative z-20"
         style={{
-          height: "var(--app-height, 100dvh)",
+          height: "var(--app-height, 100svh)",
           overflowY: "auto",
           overflowX: "hidden",
           overscrollBehaviorY: "contain",

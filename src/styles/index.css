@@ -15,19 +15,19 @@ html, body {
 }
 
 :root {
-  --nav-dock-space: calc(env(safe-area-inset-bottom, 0px) + 86px);
+  --nav-dock-space: 92px;
 }
 
 #root {
   width: 100%;
-  height: var(--app-height, 100dvh);
-  min-height: var(--app-height, 100dvh);
+  height: var(--app-height, 100svh);
+  min-height: var(--app-height, 100svh);
 }
 
 .min-h-screen {
-  min-height: var(--app-height, 100dvh) !important;
+  min-height: var(--app-height, 100svh) !important;
 }
 
 .h-screen {
-  height: var(--app-height, 100dvh) !important;
+  height: var(--app-height, 100svh) !important;
 }

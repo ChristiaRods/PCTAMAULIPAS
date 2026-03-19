@@ -11,10 +11,14 @@ generatePWAIcons();
 const setAppHeight = () => {
   if (typeof window === "undefined") return;
 
-  const viewportHeight =
-    window.visualViewport?.height ||
-    window.innerHeight ||
-    document.documentElement.clientHeight;
+  const candidates = [
+    window.visualViewport?.height ?? 0,
+    window.innerHeight ?? 0,
+    document.documentElement.clientHeight ?? 0,
+  ].filter((value) => Number.isFinite(value) && value > 0);
+
+  if (candidates.length === 0) return;
+  const viewportHeight = Math.min(...candidates);
 
   document.documentElement.style.setProperty("--app-height", `${Math.round(viewportHeight)}px`);
 };

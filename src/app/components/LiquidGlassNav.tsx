@@ -138,7 +138,7 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
       <div
         className="px-4 pointer-events-none"
         style={{
-          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          paddingBottom: "4px",
         }}
       >
         <div
