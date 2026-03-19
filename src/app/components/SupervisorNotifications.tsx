@@ -922,7 +922,7 @@ function NotificationsView({
         </div>
       )}
 
-      <div className="h-2 shrink-0" />
+      <div className="h-0 shrink-0" />
     </PullToRefresh>
   );
 }
@@ -1169,7 +1169,7 @@ export function SupervisorNotifications() {
           </div>
 
           {/* ═══ FEED ═══ */}
-          <div className="flex-1 flex flex-col gap-2 pb-3">
+          <div className="flex-1 flex flex-col gap-2">
             {/* ── Separador de fecha ── */}
             <div className="flex items-center gap-3 px-4 mb-0 mt-1">
               <div className="flex-1 h-px bg-[#D1D1D6]" />
@@ -1212,7 +1212,12 @@ export function SupervisorNotifications() {
       )}
 
       {/* ═══ Liquid Glass Navigation — SINGLE INSTANCE, NEVER UNMOUNTS ═══ */}
-      <LiquidGlassNav currentView={navView} onChangeView={setNavView} notificationCount={navView === "notificaciones" ? 0 : unreadNotifCount} />
+      <LiquidGlassNav
+        currentView={navView}
+        onChangeView={setNavView}
+        notificationCount={navView === "notificaciones" ? 0 : unreadNotifCount}
+        layoutMode="inline"
+      />
     </div>
   );
 }

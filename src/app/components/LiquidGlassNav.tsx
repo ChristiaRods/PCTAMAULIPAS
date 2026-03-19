@@ -42,9 +42,15 @@ interface LiquidGlassNavProps {
   currentView: NavView;
   onChangeView: (view: NavView) => void;
   notificationCount?: number;
+  layoutMode?: "overlay" | "inline";
 }
 
-export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 0 }: LiquidGlassNavProps) {
+export function LiquidGlassNav({
+  currentView,
+  onChangeView,
+  notificationCount = 0,
+  layoutMode = "overlay",
+}: LiquidGlassNavProps) {
   const navContainerRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<Map<NavView, HTMLButtonElement>>(new Map());
   const prevViewRef = useRef<NavView>(currentView);
@@ -133,25 +139,20 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const nav = (
+  const navCore = (
     <div
-      data-debug-id="liquid-nav"
-      className="fixed left-4 right-4 z-50 overflow-visible pointer-events-none"
-      style={{ bottom: "8px" }}
+      ref={navContainerRef}
+      className="relative flex items-center gap-0 px-2 py-1 rounded-full overflow-visible pointer-events-auto"
+      style={{
+        background: t.barBg,
+        backdropFilter: "blur(60px) saturate(1.8)",
+        WebkitBackdropFilter: "blur(60px) saturate(1.8)",
+        border: `0.5px solid ${t.barBorder}`,
+        boxShadow: t.barShadow,
+        transition:
+          "background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease",
+      }}
     >
-        <div
-          ref={navContainerRef}
-          className="relative flex items-center gap-0 px-2 py-1 rounded-full overflow-visible pointer-events-auto"
-          style={{
-            background: t.barBg,
-            backdropFilter: "blur(60px) saturate(1.8)",
-            WebkitBackdropFilter: "blur(60px) saturate(1.8)",
-            border: `0.5px solid ${t.barBorder}`,
-            boxShadow: t.barShadow,
-            transition:
-              "background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease",
-          }}
-        >
         {/* Top specular highlight */}
         <div
           className="absolute inset-x-3 top-[2px] h-[45%] rounded-full pointer-events-none"
@@ -284,7 +285,28 @@ export function LiquidGlassNav({ currentView, onChangeView, notificationCount = 
             </button>
           );
         })}
-        </div>
+    </div>
+  );
+
+  if (layoutMode === "inline") {
+    return (
+      <div
+        data-debug-id="liquid-nav"
+        className="relative z-50 overflow-visible pointer-events-none px-4 pt-2"
+        style={{ paddingBottom: "4px" }}
+      >
+        {navCore}
+      </div>
+    );
+  }
+
+  const nav = (
+    <div
+      data-debug-id="liquid-nav"
+      className="fixed left-4 right-4 z-50 overflow-visible pointer-events-none"
+      style={{ bottom: "8px" }}
+    >
+      {navCore}
     </div>
   );
 
