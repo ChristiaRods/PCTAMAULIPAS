@@ -448,6 +448,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    if (!SWIPE_BACK_ENABLED) return;
     el.addEventListener("touchstart", handleTouchStart, { passive: true });
     el.addEventListener("touchmove", handleTouchMove, { passive: false });
     el.addEventListener("touchend", handleTouchEnd, { passive: true });
@@ -554,7 +555,7 @@ export function SimpleRouter({ routes, initialPath }: { routes: RouteConfig[]; i
           height: "var(--app-height, 100svh)",
           overflowY: "auto",
           overflowX: "hidden",
-          overscrollBehaviorY: "contain",
+          overscrollBehaviorY: "auto",
           WebkitOverflowScrolling: "touch" as any,
           background: "#F2F2F7",
         }}
