@@ -62,6 +62,7 @@
   --pc-safe-bottom-effective: 0px;
   --pc-safe-mode: browser;
   --pc-safe-viewport-excludes-insets: 0;
+  --pc-nav-bottom-offset: 8px;
 }
 
 .dark {

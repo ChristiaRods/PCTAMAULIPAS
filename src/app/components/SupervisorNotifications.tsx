@@ -232,7 +232,7 @@ function FeedCard({ item, onOpen, onImageClick }: { item: FeedItem; onOpen: () =
 /* ─── Closed statuses ─── */
 const CLOSED_STATUSES = ["Atendido", "Cerrado", "Archivado", "Falso reporte"];
 const OVERLAY_NAV_SPACE =
-  "calc(var(--pc-safe-bottom-effective, env(safe-area-inset-bottom, 0px)) + 88px)";
+  "calc(var(--pc-nav-bottom-offset, 8px) + 88px)";
 
 /* ─── Persistent read state ─── */
 const READ_STATE_KEY = "pc-tamaulipas-read-notifs";

@@ -79,7 +79,7 @@ export function LoginScreen() {
           WebkitBackdropFilter: "saturate(180%) blur(40px)",
           boxShadow: "inset 0 0.5px 0 rgba(255,255,255,0.6), 0 -12px 40px rgba(0,0,0,0.25)",
           paddingBottom:
-            "max(var(--pc-safe-bottom-effective, env(safe-area-inset-bottom, 0px)), 16px)",
+            "max(var(--pc-nav-bottom-offset, 8px), 16px)",
         }}
       >
         <p className="text-center text-muted-foreground text-[15px] mb-1">Selecciona tu perfil para continuar</p>

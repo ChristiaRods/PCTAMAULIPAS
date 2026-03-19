@@ -53,6 +53,7 @@ function applySafeAreaVariables() {
 
   const effectiveTop = viewportExcludesInsets ? 0 : insets.top;
   const effectiveBottom = viewportExcludesInsets ? 0 : insets.bottom;
+  const navBottomOffset = standalone ? 8 : 12;
 
   const rootStyle = document.documentElement.style;
   rootStyle.setProperty("--pc-safe-top-raw", `${insets.top}px`);
@@ -61,6 +62,7 @@ function applySafeAreaVariables() {
   rootStyle.setProperty("--pc-safe-left-raw", `${insets.left}px`);
   rootStyle.setProperty("--pc-safe-top-effective", `${effectiveTop}px`);
   rootStyle.setProperty("--pc-safe-bottom-effective", `${effectiveBottom}px`);
+  rootStyle.setProperty("--pc-nav-bottom-offset", `${navBottomOffset}px`);
   rootStyle.setProperty("--pc-safe-mode", standalone ? "standalone" : "browser");
   rootStyle.setProperty("--pc-safe-viewport-excludes-insets", viewportExcludesInsets ? "1" : "0");
 }

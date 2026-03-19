@@ -35,6 +35,7 @@ type MetricsSnapshot = {
     bottomEffective: number;
     mode: string;
     viewportExcludesInsets: string;
+    navBottomOffset: number;
   };
   gapBelowNav: number | null;
   bottomElement: string;
@@ -155,6 +156,7 @@ function readMetrics(probe: HTMLDivElement | null): MetricsSnapshot {
     mode: rootStyle.getPropertyValue("--pc-safe-mode").trim() || "unset",
     viewportExcludesInsets:
       rootStyle.getPropertyValue("--pc-safe-viewport-excludes-insets").trim() || "unset",
+    navBottomOffset: parseCssPx(rootStyle.getPropertyValue("--pc-nav-bottom-offset")),
   };
 
   return {
@@ -352,6 +354,7 @@ export function LayoutDebugPanel() {
             <div>safe-top-effective-var: {snapshot.safeAreaRuntime.topEffective}</div>
             <div>safe-mode-var: {snapshot.safeAreaRuntime.mode}</div>
             <div>viewport-excludes-insets-var: {snapshot.safeAreaRuntime.viewportExcludesInsets}</div>
+            <div>nav-bottom-offset-var: {snapshot.safeAreaRuntime.navBottomOffset}</div>
             <div>nav: {snapshot.navRect ? `${snapshot.navRect.top}-${snapshot.navRect.bottom} h${snapshot.navRect.height}` : "none"}</div>
             <div>nav-core: {snapshot.navCoreRect ? `${snapshot.navCoreRect.top}-${snapshot.navCoreRect.bottom} h${snapshot.navCoreRect.height}` : "none"}</div>
             <div>nav-mode: {snapshot.navMode}</div>
