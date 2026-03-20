@@ -1,16 +1,36 @@
 import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
-import * as kv from "./kv_store.tsx";
+import * as kv from "./kv_store.ts";
 import {
   generateVAPIDKeys,
   sendPushNotification,
   type VAPIDKeys,
   type PushPayload,
-} from "./web-push.tsx";
+} from "./web-push.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const app = new Hono();
+const ROUTE_PREFIXES = ["", "/server", "/make-server-aac1ff1a"] as const;
+
+function prefixedPaths(path: string): string[] {
+  return ROUTE_PREFIXES.map((prefix) => {
+    const normalized = `${prefix}${path}`.replace(/\/+/g, "/");
+    return normalized.startsWith("/") ? normalized : `/${normalized}`;
+  });
+}
+
+function routeGet(path: string, handler: Parameters<typeof app.get>[1]) {
+  for (const p of prefixedPaths(path)) app.get(p, handler);
+}
+
+function routePost(path: string, handler: Parameters<typeof app.post>[1]) {
+  for (const p of prefixedPaths(path)) app.post(p, handler);
+}
+
+function routeDelete(path: string, handler: Parameters<typeof app.delete>[1]) {
+  for (const p of prefixedPaths(path)) app.delete(p, handler);
+}
 
 // Enable logger
 app.use("*", logger(console.log));
@@ -27,9 +47,9 @@ app.use(
   })
 );
 
-/* ════════════════════════════════════════════════════════
-   SUPABASE STORAGE — Notification attachments bucket
-   ════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   SUPABASE STORAGE â€” Notification attachments bucket
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 const ATTACHMENT_BUCKET = "make-aac1ff1a-notif-attachments";
 const EVIDENCE_BUCKET = "make-aac1ff1a-evidence";
@@ -66,13 +86,13 @@ function getSupabaseAdmin() {
 })();
 
 // Health check endpoint
-app.get("/health", (c) => {
+routeGet("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
-/* ════════════════════════════════════════════════════════
-   PUSH NOTIFICATIONS — VAPID Keys
-   ════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   PUSH NOTIFICATIONS â€” VAPID Keys
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 const VAPID_KV_KEY = "push:vapid_keys";
 const VAPID_SUBJECT = "mailto:proteccioncivil@tamaulipas.gob.mx";
@@ -96,8 +116,8 @@ async function getOrCreateVAPIDKeys(): Promise<VAPIDKeys> {
   return keys;
 }
 
-/** GET /push/vapid-public-key — Returns the VAPID public key for client subscription */
-app.get("/push/vapid-public-key", async (c) => {
+/** GET /push/vapid-public-key â€” Returns the VAPID public key for client subscription */
+routeGet("/push/vapid-public-key", async (c) => {
   try {
     const keys = await getOrCreateVAPIDKeys();
     return c.json({ publicKey: keys.publicKey });
@@ -108,12 +128,12 @@ app.get("/push/vapid-public-key", async (c) => {
   }
 });
 
-/* ════════════════════════════════════════════════════════
-   PUSH NOTIFICATIONS — Subscriptions
-   ════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   PUSH NOTIFICATIONS â€” Subscriptions
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-/** POST /push/subscribe — Save a push subscription */
-app.post("/push/subscribe", async (c) => {
+/** POST /push/subscribe â€” Save a push subscription */
+routePost("/push/subscribe", async (c) => {
   try {
     const body = await c.req.json();
     const { subscription, deviceName } = body;
@@ -146,8 +166,8 @@ app.post("/push/subscribe", async (c) => {
   }
 });
 
-/** DELETE /push/unsubscribe — Remove a push subscription */
-app.post("/push/unsubscribe", async (c) => {
+/** DELETE /push/unsubscribe â€” Remove a push subscription */
+routePost("/push/unsubscribe", async (c) => {
   try {
     const body = await c.req.json();
     const { endpoint } = body;
@@ -172,8 +192,8 @@ app.post("/push/unsubscribe", async (c) => {
   }
 });
 
-/** GET /push/subscriptions — List all subscriptions (for debug) */
-app.get("/push/subscriptions", async (c) => {
+/** GET /push/subscriptions â€” List all subscriptions (for debug) */
+routeGet("/push/subscriptions", async (c) => {
   try {
     const subs = await kv.getByPrefix("push:sub:");
     return c.json({ count: subs.length, subscriptions: subs });
@@ -184,12 +204,12 @@ app.get("/push/subscriptions", async (c) => {
   }
 });
 
-/* ════════════════════════════════════════════════════════
-   PUSH NOTIFICATIONS — File Attachments
-   ════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   PUSH NOTIFICATIONS â€” File Attachments
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-/** POST /push/upload — Upload a file attachment for a notification */
-app.post("/push/upload", async (c) => {
+/** POST /push/upload â€” Upload a file attachment for a notification */
+routePost("/push/upload", async (c) => {
   try {
     const formData = await c.req.formData();
     const file = formData.get("file") as File | null;
@@ -247,8 +267,8 @@ app.post("/push/upload", async (c) => {
   }
 });
 
-/** POST /files/upload-evidence — Upload report/monitoring evidence and return public URL */
-app.post("/files/upload-evidence", async (c) => {
+/** POST /files/upload-evidence â€” Upload report/monitoring evidence and return public URL */
+routePost("/files/upload-evidence", async (c) => {
   try {
     const formData = await c.req.formData();
     const file = formData.get("file") as File | null;
@@ -297,12 +317,12 @@ app.post("/files/upload-evidence", async (c) => {
   }
 });
 
-/* ════════════════════════════════════════════════════════
-   PUSH NOTIFICATIONS — Send
-   ════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   PUSH NOTIFICATIONS â€” Send
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-/** POST /push/send — Send push notification to all subscribers */
-app.post("/push/send", async (c) => {
+/** POST /push/send â€” Send push notification to all subscribers */
+routePost("/push/send", async (c) => {
   try {
     const body = await c.req.json();
     const { title, body: notifBody, icon, tag, url, attachmentUrl, attachmentName, attachmentType } = body as PushPayload & { url?: string; attachmentUrl?: string; attachmentName?: string; attachmentType?: string };
@@ -388,8 +408,8 @@ app.post("/push/send", async (c) => {
   }
 });
 
-/** POST /push/send-test — Quick test notification */
-app.post("/push/send-test", async (c) => {
+/** POST /push/send-test â€” Quick test notification */
+routePost("/push/send-test", async (c) => {
   try {
     const vapidKeys = await getOrCreateVAPIDKeys();
     const subscriptions = await kv.getByPrefix("push:sub:");
@@ -402,8 +422,8 @@ app.post("/push/send-test", async (c) => {
     const notifId = crypto.randomUUID();
     const notifRecord = {
       id: notifId,
-      title: "🚨 Protección Civil Tamaulipas",
-      body: "Prueba de notificación push — Si ves esto, ¡el sistema funciona correctamente!",
+      title: "ðŸš¨ ProtecciÃ³n Civil Tamaulipas",
+      body: "Prueba de notificaciÃ³n push â€” Si ves esto, Â¡el sistema funciona correctamente!",
       icon: "/icon.svg",
       tag: "test-notification",
       createdAt: new Date().toISOString(),
@@ -412,8 +432,8 @@ app.post("/push/send-test", async (c) => {
     console.log(`Test notification stored: push:notif:${notifId}`);
 
     const payload: PushPayload = {
-      title: "🚨 Protección Civil Tamaulipas",
-      body: "Prueba de notificación push — Si ves esto, ¡el sistema funciona correctamente!",
+      title: "ðŸš¨ ProtecciÃ³n Civil Tamaulipas",
+      body: "Prueba de notificaciÃ³n push â€” Si ves esto, Â¡el sistema funciona correctamente!",
       icon: "/icon.svg",
       badge: "/icon.svg",
       tag: "test-notification",
@@ -444,12 +464,12 @@ app.post("/push/send-test", async (c) => {
   }
 });
 
-/* ════════════════════════════════════════════════════════
-   PUSH NOTIFICATIONS — Notification Detail
-   ════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   PUSH NOTIFICATIONS â€” Notification Detail
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-/** GET /push/notification/:id — Get full notification content by ID */
-app.get("/push/notification/:id", async (c) => {
+/** GET /push/notification/:id â€” Get full notification content by ID */
+routeGet("/push/notification/:id", async (c) => {
   try {
     const id = c.req.param("id");
     if (!id) {
@@ -469,8 +489,8 @@ app.get("/push/notification/:id", async (c) => {
   }
 });
 
-/** GET /push/notifications — List all sent push notifications (for Alertas tab) */
-app.get("/push/notifications", async (c) => {
+/** GET /push/notifications â€” List all sent push notifications (for Alertas tab) */
+routeGet("/push/notifications", async (c) => {
   try {
     const notifications = await kv.getByPrefix("push:notif:");
     // Sort by createdAt descending (newest first)
@@ -487,12 +507,12 @@ app.get("/push/notifications", async (c) => {
   }
 });
 
-/* ════════════════════════════════════════════════════════
-   REPORTS 911 — Server-synced reports across devices
-   ════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   REPORTS 911 â€” Server-synced reports across devices
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-/** POST /reports — Save a report and optionally send push to all devices */
-app.post("/reports", async (c) => {
+/** POST /reports â€” Save a report and optionally send push to all devices */
+routePost("/reports", async (c) => {
   try {
     const body = await c.req.json();
     const report = body.report;
@@ -556,7 +576,7 @@ app.post("/reports", async (c) => {
 
         const notifRecord = {
           id: notifId,
-          title: "Protección Civil Tamaulipas",
+          title: "ProtecciÃ³n Civil Tamaulipas",
           body: bodyText,
           icon: "/icon.svg",
           tag: `report-${report.id}`,
@@ -566,7 +586,7 @@ app.post("/reports", async (c) => {
         await kv.set(`push:notif:${notifId}`, notifRecord);
 
         const payload: PushPayload = {
-          title: "Protección Civil Tamaulipas",
+          title: "ProtecciÃ³n Civil Tamaulipas",
           body: bodyText,
           icon: "/icon.svg",
           badge: "/icon.svg",
@@ -619,8 +639,8 @@ app.post("/reports", async (c) => {
   }
 });
 
-/** GET /reports — Get all submitted reports */
-app.get("/reports", async (c) => {
+/** GET /reports â€” Get all submitted reports */
+routeGet("/reports", async (c) => {
   try {
     const reports = await kv.getByPrefix("report:");
     // Sort by sentAt descending (newest first)
@@ -634,8 +654,8 @@ app.get("/reports", async (c) => {
   }
 });
 
-/** DELETE /reports/:id — Delete a specific report */
-app.delete("/reports/:id", async (c) => {
+/** DELETE /reports/:id â€” Delete a specific report */
+routeDelete("/reports/:id", async (c) => {
   try {
     const id = c.req.param("id");
     if (!id) {
@@ -651,12 +671,12 @@ app.delete("/reports/:id", async (c) => {
   }
 });
 
-/* ══════════════════════════════════════════════════════════════════════════
-   MONITORING — Server-synced monitoring entries across devices
-   ══════════════════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   MONITORING â€” Server-synced monitoring entries across devices
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-/** POST /monitoring — Save a monitoring entry */
-app.post("/monitoring", async (c) => {
+/** POST /monitoring â€” Save a monitoring entry */
+routePost("/monitoring", async (c) => {
   try {
     const body = await c.req.json();
     const monitoring = body.monitoring;
@@ -684,8 +704,8 @@ app.post("/monitoring", async (c) => {
   }
 });
 
-/** GET /monitoring — Get all submitted monitoring entries */
-app.get("/monitoring", async (c) => {
+/** GET /monitoring â€” Get all submitted monitoring entries */
+routeGet("/monitoring", async (c) => {
   try {
     const monitoring = await kv.getByPrefix("monitoring:");
     monitoring.sort((a: any, b: any) => (b.sentAt || 0) - (a.sentAt || 0));
@@ -697,9 +717,9 @@ app.get("/monitoring", async (c) => {
   }
 });
 
-/* ════════════════════════════════════════════════════════
-   SETTINGS — Avatar per role
-   ════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   SETTINGS â€” Avatar per role
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 const AVATAR_BUCKET = "make-aac1ff1a-avatars";
 
@@ -718,8 +738,8 @@ const AVATAR_BUCKET = "make-aac1ff1a-avatars";
   }
 })();
 
-/** GET /settings/avatar/:roleId — Get avatar URL for a role */
-app.get("/settings/avatar/:roleId", async (c) => {
+/** GET /settings/avatar/:roleId â€” Get avatar URL for a role */
+routeGet("/settings/avatar/:roleId", async (c) => {
   try {
     const roleId = c.req.param("roleId");
     if (!roleId) return c.json({ error: "Missing roleId" }, 400);
@@ -748,8 +768,8 @@ app.get("/settings/avatar/:roleId", async (c) => {
   }
 });
 
-/** POST /settings/avatar/:roleId — Upload avatar for a role */
-app.post("/settings/avatar/:roleId", async (c) => {
+/** POST /settings/avatar/:roleId â€” Upload avatar for a role */
+routePost("/settings/avatar/:roleId", async (c) => {
   try {
     const roleId = c.req.param("roleId");
     if (!roleId) return c.json({ error: "Missing roleId" }, 400);
@@ -800,12 +820,12 @@ app.post("/settings/avatar/:roleId", async (c) => {
   }
 });
 
-/* ════════════════════════════════════════════════════════
-   SETTINGS — Display name per role
-   ════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   SETTINGS â€” Display name per role
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-/** GET /settings/name/:roleId — Get display name for a role */
-app.get("/settings/name/:roleId", async (c) => {
+/** GET /settings/name/:roleId â€” Get display name for a role */
+routeGet("/settings/name/:roleId", async (c) => {
   try {
     const roleId = c.req.param("roleId");
     if (!roleId) return c.json({ error: "Missing roleId" }, 400);
@@ -822,8 +842,8 @@ app.get("/settings/name/:roleId", async (c) => {
   }
 });
 
-/** POST /settings/name/:roleId — Save display name for a role */
-app.post("/settings/name/:roleId", async (c) => {
+/** POST /settings/name/:roleId â€” Save display name for a role */
+routePost("/settings/name/:roleId", async (c) => {
   try {
     const roleId = c.req.param("roleId");
     if (!roleId) return c.json({ error: "Missing roleId" }, 400);
