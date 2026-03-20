@@ -47,6 +47,29 @@ function makeAudioId(): string {
   return `audio-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 }
 
+function isIOSLikeDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const isIOS = /iPad|iPhone|iPod/i.test(ua);
+  const isIPadOSDesktopUA =
+    navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  return isIOS || isIPadOSDesktopUA;
+}
+
+function selectRecorderMimeType(): string | null {
+  if (typeof MediaRecorder === "undefined") return null;
+
+  // iOS/Safari is more stable with mp4 (or browser default) than webm.
+  const candidates = isIOSLikeDevice()
+    ? ["audio/mp4", "audio/mpeg", "audio/aac", "audio/webm;codecs=opus", "audio/webm"]
+    : ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+
+  for (const type of candidates) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
+  }
+  return null;
+}
+
 /* ═════════════════════════════════════════════════════════════════
    COMPONENT
    ═════════════════════════════════════════════════════════════════ */
@@ -68,6 +91,8 @@ export function AudioRecorder911({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
   const transcriptRef = useRef<string>(""); // accumulated final transcript
+  const interimRef = useRef<string>("");
+  const shouldRestartRecognitionRef = useRef<boolean>(false);
   const streamRef = useRef<MediaStream | null>(null);
   const audioUrlMapRef = useRef<Record<string, string>>({});
 
@@ -122,6 +147,10 @@ export function AudioRecorder911({
 
   /* ─── Stop recording ─── */
   const stopRecording = useCallback(() => {
+    shouldRestartRecognitionRef.current = false;
+    if (!transcriptRef.current.trim() && interimRef.current.trim()) {
+      transcriptRef.current = interimRef.current.trim();
+    }
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -154,6 +183,8 @@ export function AudioRecorder911({
 
     try {
       transcriptRef.current = "";
+      interimRef.current = "";
+      shouldRestartRecognitionRef.current = true;
       setLiveTranscript("");
       setInterimText("");
       setElapsed(0);
@@ -164,13 +195,16 @@ export function AudioRecorder911({
       });
       streamRef.current = stream;
 
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "audio/mp4";
-
-      const recorder = new MediaRecorder(stream, { mimeType });
+      const selectedMimeType = selectRecorderMimeType();
+      let recorder: MediaRecorder;
+      try {
+        recorder = selectedMimeType
+          ? new MediaRecorder(stream, { mimeType: selectedMimeType })
+          : new MediaRecorder(stream);
+      } catch {
+        recorder = new MediaRecorder(stream);
+      }
+      const mimeType = recorder.mimeType || selectedMimeType || "audio/mp4";
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
@@ -178,20 +212,28 @@ export function AudioRecorder911({
       };
 
       recorder.onstop = () => {
+        shouldRestartRecognitionRef.current = false;
         if (streamRef.current) {
           streamRef.current.getTracks().forEach((t) => t.stop());
           streamRef.current = null;
         }
         const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        if (blob.size === 0) {
+          alert(
+            "No se pudo guardar el audio de esta nota. Intenta grabar nuevamente.",
+          );
+          return;
+        }
         const durationSec = Math.max(
           1,
           Math.round((Date.now() - startTimeRef.current) / 1000),
         );
+        const transcript = transcriptRef.current.trim() || interimRef.current.trim();
         const newNote: AudioValue = {
           id: makeAudioId(),
           blob,
           mimeType,
-          transcript: transcriptRef.current.trim(),
+          transcript,
           durationSec,
         };
         onChange([...values, newNote]);
@@ -221,21 +263,50 @@ export function AudioRecorder911({
               interim += result[0].transcript;
             }
           }
+          interimRef.current = interim;
           setLiveTranscript(transcriptRef.current);
           setInterimText(interim);
         };
 
-        recognition.onerror = () => {
-          // silence non-critical errors
+        recognition.onerror = (event: Event) => {
+          const maybeError = event as Event & { error?: string; message?: string };
+          const errName = String(maybeError.error || "");
+          const errMessage = String(maybeError.message || "");
+          // Keep benign errors quiet, but log the rest to debug inconsistent sessions.
+          if (
+            errName &&
+            errName !== "no-speech" &&
+            errName !== "aborted"
+          ) {
+            console.warn("[AudioRecorder911] speech error:", errName, errMessage);
+          }
+          if (
+            errName === "not-allowed" ||
+            errName === "service-not-allowed"
+          ) {
+            shouldRestartRecognitionRef.current = false;
+          }
         };
 
         recognition.onend = () => {
           if (
+            shouldRestartRecognitionRef.current &&
             mediaRecorderRef.current?.state === "recording" &&
             recognitionRef.current
           ) {
             try {
-              recognition.start();
+              setTimeout(() => {
+                if (
+                  shouldRestartRecognitionRef.current &&
+                  mediaRecorderRef.current?.state === "recording"
+                ) {
+                  try {
+                    recognition.start();
+                  } catch {
+                    // ignore
+                  }
+                }
+              }, 120);
             } catch {
               // ignore
             }
