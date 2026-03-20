@@ -83,6 +83,7 @@ export function AudioRecorder911({
   const [interimText, setInterimText] = useState("");
   const [liveTranscript, setLiveTranscript] = useState("");
   const [elapsed, setElapsed] = useState(0);
+  const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
 
   /* ─── Refs ─── */
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -94,7 +95,7 @@ export function AudioRecorder911({
   const interimRef = useRef<string>("");
   const shouldRestartRecognitionRef = useRef<boolean>(false);
   const streamRef = useRef<MediaStream | null>(null);
-  const audioUrlMapRef = useRef<Record<string, string>>({});
+  const audioUrlsRef = useRef<Record<string, string>>({});
 
   const isMicSupported =
     typeof navigator !== "undefined" &&
@@ -106,21 +107,35 @@ export function AudioRecorder911({
 
   /* ─── Object URLs cleanup ─── */
   useEffect(() => {
-    const activeIds = new Set(values.map((v) => v.id));
+    setAudioUrls((prev) => {
+      const activeIds = new Set(values.map((v) => v.id));
+      let next = prev;
+      let changed = false;
 
-    for (const note of values) {
-      if (!audioUrlMapRef.current[note.id]) {
-        audioUrlMapRef.current[note.id] = URL.createObjectURL(note.blob);
+      for (const note of values) {
+        if (!next[note.id]) {
+          if (!changed) next = { ...prev };
+          next[note.id] = URL.createObjectURL(note.blob);
+          changed = true;
+        }
       }
-    }
 
-    for (const id of Object.keys(audioUrlMapRef.current)) {
-      if (!activeIds.has(id)) {
-        URL.revokeObjectURL(audioUrlMapRef.current[id]);
-        delete audioUrlMapRef.current[id];
+      for (const id of Object.keys(next)) {
+        if (!activeIds.has(id)) {
+          if (!changed) next = { ...prev };
+          URL.revokeObjectURL(next[id]);
+          delete next[id];
+          changed = true;
+        }
       }
-    }
+
+      return changed ? next : prev;
+    });
   }, [values]);
+
+  useEffect(() => {
+    audioUrlsRef.current = audioUrls;
+  }, [audioUrls]);
 
   useEffect(() => {
     return () => {
@@ -138,10 +153,10 @@ export function AudioRecorder911({
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
-      for (const id of Object.keys(audioUrlMapRef.current)) {
-        URL.revokeObjectURL(audioUrlMapRef.current[id]);
+      for (const id of Object.keys(audioUrlsRef.current)) {
+        URL.revokeObjectURL(audioUrlsRef.current[id]);
       }
-      audioUrlMapRef.current = {};
+      audioUrlsRef.current = {};
     };
   }, []);
 
@@ -239,7 +254,7 @@ export function AudioRecorder911({
         onChange([...values, newNote]);
       };
 
-      recorder.start(1000);
+      recorder.start(250);
       startTimeRef.current = Date.now();
 
       timerRef.current = setInterval(() => {
@@ -472,7 +487,7 @@ export function AudioRecorder911({
       {values.length > 0 && (
         <div className="space-y-2">
           {values.map((note, idx) => {
-            const audioUrl = audioUrlMapRef.current[note.id];
+            const audioUrl = audioUrls[note.id];
             return (
               <div
                 key={note.id}
