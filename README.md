@@ -29,7 +29,7 @@ Aplicación móvil operativa de Protección Civil Tamaulipas (React + Vite + Sup
 ```bash
 VITE_SUPABASE_PROJECT_ID=tu_project_id
 VITE_SUPABASE_ANON_KEY=tu_anon_key
-VITE_SUPABASE_FUNCTION_NAME=make-server-aac1ff1a
+VITE_SUPABASE_FUNCTION_NAME=server
 ```
 
 ## Correr local
@@ -75,7 +75,7 @@ En Supabase SQL Editor, ejecuta el archivo:
 - [setup.sql](C:\Users\Christian\Downloads\REPORTES911YMONITOREO\supabase\setup.sql)
 
 La app consume los endpoints bajo:
-`https://<PROJECT_ID>.supabase.co/functions/v1/make-server-aac1ff1a`
+`https://<PROJECT_ID>.supabase.co/functions/v1/server`
 
 ## Despliegue en Vercel
 

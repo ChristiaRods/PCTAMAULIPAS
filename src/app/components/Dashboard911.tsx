@@ -1294,13 +1294,29 @@ function ReportFormView() {
 
       // Save to server + push notification to all devices
       const result = await saveReport(report);
+      if (!result.success) {
+        console.warn("[Dashboard911] Report saved locally but server sync failed");
+        const failedImages = result.uploadFailures?.images || 0;
+        const failedAudio = result.uploadFailures?.audio || 0;
+        const mediaHint =
+          failedImages > 0 || failedAudio > 0
+            ? `\n\nFallos de evidencia: ${failedImages} foto(s), ${failedAudio} audio(s).`
+            : "";
+        alert(
+          `No se pudo sincronizar con Supabase en este momento. El reporte quedó guardado solo en este dispositivo.${mediaHint}\n\nError: ${result.error || "sin detalle del servidor"}`,
+        );
+        return;
+      }
+
       if (result.push && result.push.sent > 0) {
         console.log(
           `[Dashboard911] Report sent, push delivered to ${result.push.sent}/${result.push.total} devices`,
         );
-      } else if (!result.success) {
-        console.warn(
-          "[Dashboard911] Report saved locally but server sync failed",
+      }
+
+      if ((result.uploadFailures?.images || 0) > 0 || (result.uploadFailures?.audio || 0) > 0) {
+        alert(
+          `El reporte sí se sincronizó, pero hubo evidencia que no subió a Storage: ${result.uploadFailures?.images || 0} foto(s), ${result.uploadFailures?.audio || 0} audio(s).`,
         );
       }
 

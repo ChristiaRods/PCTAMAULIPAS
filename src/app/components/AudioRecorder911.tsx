@@ -75,6 +75,7 @@ export function AudioRecorder911({
     typeof navigator !== "undefined" &&
     !!navigator.mediaDevices?.getUserMedia &&
     typeof MediaRecorder !== "undefined";
+  const isSpeechRecognitionSupported = Boolean(getSR());
 
   const canAddMore = values.length < maxNotes;
 
@@ -347,7 +348,9 @@ export function AudioRecorder911({
             ) : (
               <div className="px-3 pb-3">
                 <p className="text-[12px] text-[#8E8E93] italic">
-                  Hable claramente para ver la transcripción en tiempo real...
+                  {isSpeechRecognitionSupported
+                    ? "Hable claramente para ver la transcripcion en tiempo real..."
+                    : "Tu dispositivo grabara el audio, pero no soporta transcripcion automatica en tiempo real."}
                 </p>
               </div>
             )}
@@ -383,9 +386,11 @@ export function AudioRecorder911({
                   : `Límite alcanzado (${maxNotes})`}
               </p>
               <p className="text-[12px] text-[#8E8E93]">
-                {isMicSupported
-                  ? "Asegurate de acercarte lo suficiente al microfono para tener una buena transcripción."
-                  : "Grabación no disponible en este navegador"}
+                {!isMicSupported
+                  ? "Grabacion no disponible en este navegador"
+                  : isSpeechRecognitionSupported
+                    ? "Asegurate de acercarte lo suficiente al microfono para tener una buena transcripcion."
+                    : "Este dispositivo grabara la nota de voz, pero la transcripcion automatica puede no estar disponible."}
               </p>
             </div>
             <Plus className="w-4 h-4 text-[#AB1738]" strokeWidth={2.2} />

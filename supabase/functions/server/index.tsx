@@ -66,7 +66,7 @@ function getSupabaseAdmin() {
 })();
 
 // Health check endpoint
-app.get("/make-server-aac1ff1a/health", (c) => {
+app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
@@ -97,7 +97,7 @@ async function getOrCreateVAPIDKeys(): Promise<VAPIDKeys> {
 }
 
 /** GET /push/vapid-public-key — Returns the VAPID public key for client subscription */
-app.get("/make-server-aac1ff1a/push/vapid-public-key", async (c) => {
+app.get("/push/vapid-public-key", async (c) => {
   try {
     const keys = await getOrCreateVAPIDKeys();
     return c.json({ publicKey: keys.publicKey });
@@ -113,7 +113,7 @@ app.get("/make-server-aac1ff1a/push/vapid-public-key", async (c) => {
    ════════════════════════════════════════════════════════ */
 
 /** POST /push/subscribe — Save a push subscription */
-app.post("/make-server-aac1ff1a/push/subscribe", async (c) => {
+app.post("/push/subscribe", async (c) => {
   try {
     const body = await c.req.json();
     const { subscription, deviceName } = body;
@@ -147,7 +147,7 @@ app.post("/make-server-aac1ff1a/push/subscribe", async (c) => {
 });
 
 /** DELETE /push/unsubscribe — Remove a push subscription */
-app.post("/make-server-aac1ff1a/push/unsubscribe", async (c) => {
+app.post("/push/unsubscribe", async (c) => {
   try {
     const body = await c.req.json();
     const { endpoint } = body;
@@ -173,7 +173,7 @@ app.post("/make-server-aac1ff1a/push/unsubscribe", async (c) => {
 });
 
 /** GET /push/subscriptions — List all subscriptions (for debug) */
-app.get("/make-server-aac1ff1a/push/subscriptions", async (c) => {
+app.get("/push/subscriptions", async (c) => {
   try {
     const subs = await kv.getByPrefix("push:sub:");
     return c.json({ count: subs.length, subscriptions: subs });
@@ -189,7 +189,7 @@ app.get("/make-server-aac1ff1a/push/subscriptions", async (c) => {
    ════════════════════════════════════════════════════════ */
 
 /** POST /push/upload — Upload a file attachment for a notification */
-app.post("/make-server-aac1ff1a/push/upload", async (c) => {
+app.post("/push/upload", async (c) => {
   try {
     const formData = await c.req.formData();
     const file = formData.get("file") as File | null;
@@ -248,7 +248,7 @@ app.post("/make-server-aac1ff1a/push/upload", async (c) => {
 });
 
 /** POST /files/upload-evidence — Upload report/monitoring evidence and return public URL */
-app.post("/make-server-aac1ff1a/files/upload-evidence", async (c) => {
+app.post("/files/upload-evidence", async (c) => {
   try {
     const formData = await c.req.formData();
     const file = formData.get("file") as File | null;
@@ -302,7 +302,7 @@ app.post("/make-server-aac1ff1a/files/upload-evidence", async (c) => {
    ════════════════════════════════════════════════════════ */
 
 /** POST /push/send — Send push notification to all subscribers */
-app.post("/make-server-aac1ff1a/push/send", async (c) => {
+app.post("/push/send", async (c) => {
   try {
     const body = await c.req.json();
     const { title, body: notifBody, icon, tag, url, attachmentUrl, attachmentName, attachmentType } = body as PushPayload & { url?: string; attachmentUrl?: string; attachmentName?: string; attachmentType?: string };
@@ -389,7 +389,7 @@ app.post("/make-server-aac1ff1a/push/send", async (c) => {
 });
 
 /** POST /push/send-test — Quick test notification */
-app.post("/make-server-aac1ff1a/push/send-test", async (c) => {
+app.post("/push/send-test", async (c) => {
   try {
     const vapidKeys = await getOrCreateVAPIDKeys();
     const subscriptions = await kv.getByPrefix("push:sub:");
@@ -449,7 +449,7 @@ app.post("/make-server-aac1ff1a/push/send-test", async (c) => {
    ════════════════════════════════════════════════════════ */
 
 /** GET /push/notification/:id — Get full notification content by ID */
-app.get("/make-server-aac1ff1a/push/notification/:id", async (c) => {
+app.get("/push/notification/:id", async (c) => {
   try {
     const id = c.req.param("id");
     if (!id) {
@@ -470,7 +470,7 @@ app.get("/make-server-aac1ff1a/push/notification/:id", async (c) => {
 });
 
 /** GET /push/notifications — List all sent push notifications (for Alertas tab) */
-app.get("/make-server-aac1ff1a/push/notifications", async (c) => {
+app.get("/push/notifications", async (c) => {
   try {
     const notifications = await kv.getByPrefix("push:notif:");
     // Sort by createdAt descending (newest first)
@@ -492,7 +492,7 @@ app.get("/make-server-aac1ff1a/push/notifications", async (c) => {
    ════════════════════════════════════════════════════════ */
 
 /** POST /reports — Save a report and optionally send push to all devices */
-app.post("/make-server-aac1ff1a/reports", async (c) => {
+app.post("/reports", async (c) => {
   try {
     const body = await c.req.json();
     const report = body.report;
@@ -620,7 +620,7 @@ app.post("/make-server-aac1ff1a/reports", async (c) => {
 });
 
 /** GET /reports — Get all submitted reports */
-app.get("/make-server-aac1ff1a/reports", async (c) => {
+app.get("/reports", async (c) => {
   try {
     const reports = await kv.getByPrefix("report:");
     // Sort by sentAt descending (newest first)
@@ -635,7 +635,7 @@ app.get("/make-server-aac1ff1a/reports", async (c) => {
 });
 
 /** DELETE /reports/:id — Delete a specific report */
-app.delete("/make-server-aac1ff1a/reports/:id", async (c) => {
+app.delete("/reports/:id", async (c) => {
   try {
     const id = c.req.param("id");
     if (!id) {
@@ -656,7 +656,7 @@ app.delete("/make-server-aac1ff1a/reports/:id", async (c) => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** POST /monitoring — Save a monitoring entry */
-app.post("/make-server-aac1ff1a/monitoring", async (c) => {
+app.post("/monitoring", async (c) => {
   try {
     const body = await c.req.json();
     const monitoring = body.monitoring;
@@ -685,7 +685,7 @@ app.post("/make-server-aac1ff1a/monitoring", async (c) => {
 });
 
 /** GET /monitoring — Get all submitted monitoring entries */
-app.get("/make-server-aac1ff1a/monitoring", async (c) => {
+app.get("/monitoring", async (c) => {
   try {
     const monitoring = await kv.getByPrefix("monitoring:");
     monitoring.sort((a: any, b: any) => (b.sentAt || 0) - (a.sentAt || 0));
@@ -719,7 +719,7 @@ const AVATAR_BUCKET = "make-aac1ff1a-avatars";
 })();
 
 /** GET /settings/avatar/:roleId — Get avatar URL for a role */
-app.get("/make-server-aac1ff1a/settings/avatar/:roleId", async (c) => {
+app.get("/settings/avatar/:roleId", async (c) => {
   try {
     const roleId = c.req.param("roleId");
     if (!roleId) return c.json({ error: "Missing roleId" }, 400);
@@ -749,7 +749,7 @@ app.get("/make-server-aac1ff1a/settings/avatar/:roleId", async (c) => {
 });
 
 /** POST /settings/avatar/:roleId — Upload avatar for a role */
-app.post("/make-server-aac1ff1a/settings/avatar/:roleId", async (c) => {
+app.post("/settings/avatar/:roleId", async (c) => {
   try {
     const roleId = c.req.param("roleId");
     if (!roleId) return c.json({ error: "Missing roleId" }, 400);
@@ -805,7 +805,7 @@ app.post("/make-server-aac1ff1a/settings/avatar/:roleId", async (c) => {
    ════════════════════════════════════════════════════════ */
 
 /** GET /settings/name/:roleId — Get display name for a role */
-app.get("/make-server-aac1ff1a/settings/name/:roleId", async (c) => {
+app.get("/settings/name/:roleId", async (c) => {
   try {
     const roleId = c.req.param("roleId");
     if (!roleId) return c.json({ error: "Missing roleId" }, 400);
@@ -823,7 +823,7 @@ app.get("/make-server-aac1ff1a/settings/name/:roleId", async (c) => {
 });
 
 /** POST /settings/name/:roleId — Save display name for a role */
-app.post("/make-server-aac1ff1a/settings/name/:roleId", async (c) => {
+app.post("/settings/name/:roleId", async (c) => {
   try {
     const roleId = c.req.param("roleId");
     if (!roleId) return c.json({ error: "Missing roleId" }, 400);

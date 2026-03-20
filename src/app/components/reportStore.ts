@@ -274,7 +274,8 @@ function dataUrlToFile(dataUrl: string, fallbackName: string): File {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const ext = mime.split("/")[1] || "bin";
+  const extRaw = mime.split("/")[1] || "bin";
+  const ext = extRaw.split(";")[0].replace(/[^a-zA-Z0-9]/g, "") || "bin";
   return new File([bytes], `${fallbackName}.${ext}`, { type: mime });
 }
 
@@ -283,6 +284,10 @@ async function uploadEvidenceDataUrl(
   folder: "reports" | "monitoring",
 ): Promise<string | null> {
   try {
+    if (!API_BASE) {
+      console.error("[reportStore] API_BASE is empty. Verify Supabase env vars.");
+      return null;
+    }
     const file = dataUrlToFile(dataUrl, `evidence-${Date.now()}`);
     const formData = new FormData();
     formData.append("file", file);
@@ -293,10 +298,15 @@ async function uploadEvidenceDataUrl(
       headers: { Authorization: apiHeaders.Authorization },
       body: formData,
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.error(`[reportStore] upload-evidence failed: ${res.status} ${errBody}`);
+      return null;
+    }
     const data = await res.json();
     return data.url || null;
-  } catch {
+  } catch (err) {
+    console.error(`[reportStore] upload-evidence exception: ${err}`);
     return null;
   }
 }
@@ -304,8 +314,23 @@ async function uploadEvidenceDataUrl(
 /* Server sync: save report + push notification */
 export async function saveReport(
   report: SubmittedReport,
-): Promise<{ success: boolean; push?: { sent: number; total: number } }> {
+): Promise<{
+  success: boolean;
+  push?: { sent: number; total: number };
+  uploadFailures?: { images: number; audio: number };
+  error?: string;
+}> {
+  if (!API_BASE) {
+    return {
+      success: false,
+      error: "API_BASE missing. Verify VITE_SUPABASE_PROJECT_ID and VITE_SUPABASE_ANON_KEY.",
+      uploadFailures: { images: 0, audio: 0 },
+    };
+  }
+
   const reportToSave = normalizeReport(report);
+  let failedImageUploads = 0;
+  let failedAudioUploads = 0;
 
   const uploadedImages: string[] = [];
   for (const imageSrc of reportToSave.imageDataUrls) {
@@ -313,6 +338,7 @@ export async function saveReport(
     if (src && src.startsWith("data:")) {
       const uploadedUrl = await uploadEvidenceDataUrl(src, "reports");
       if (uploadedUrl) src = uploadedUrl;
+      else failedImageUploads += 1;
     }
     uploadedImages.push(src);
   }
@@ -325,6 +351,7 @@ export async function saveReport(
     if (src && src.startsWith("data:")) {
       const uploadedUrl = await uploadEvidenceDataUrl(src, "reports");
       if (uploadedUrl) src = uploadedUrl;
+      else failedAudioUploads += 1;
     }
     uploadedAudioNotes.push({
       ...note,
@@ -346,24 +373,8 @@ export async function saveReport(
 
   try {
     const serverReport: SubmittedReport = normalizeReport({ ...reportToSave });
-    serverReport.imageDataUrls = serverReport.imageDataUrls.map((src) => {
-      if (src && src.startsWith("data:")) {
-        return IMAGE_LOCAL_ONLY;
-      }
-      return src;
-    });
     serverReport.imageDataUrl = serverReport.imageDataUrls[0] || null;
-
-    serverReport.audioNotes = ensureAudioNotes(serverReport).map((note) => {
-      if (note.src && note.src.startsWith("data:")) {
-        return { ...note, src: AUDIO_LOCAL_ONLY };
-      }
-      return note;
-    });
-
-    if (serverReport.audioDataUrl && serverReport.audioDataUrl.startsWith("data:")) {
-      serverReport.audioDataUrl = AUDIO_LOCAL_ONLY;
-    }
+    serverReport.audioNotes = ensureAudioNotes(serverReport);
 
     const res = await fetch(`${API_BASE}/reports`, {
       method: "POST",
@@ -373,23 +384,40 @@ export async function saveReport(
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      console.error(`[reportStore] Server save failed: ${errData.error || res.status}`);
-      return { success: false };
+      const error = String(errData.error || res.status || "unknown");
+      console.error(`[reportStore] Server save failed: ${error}`);
+      return {
+        success: false,
+        error,
+        uploadFailures: { images: failedImageUploads, audio: failedAudioUploads },
+      };
     }
 
     const data = await res.json();
     console.log(
       `[reportStore] Report synced to server: ${reportToSave.id}, push: ${data.push?.sent}/${data.push?.total}`,
     );
-    return { success: true, push: data.push };
+    return {
+      success: true,
+      push: data.push,
+      uploadFailures: { images: failedImageUploads, audio: failedAudioUploads },
+    };
   } catch (err) {
     console.error(`[reportStore] Server sync error (report saved locally): ${err}`);
-    return { success: false };
+    return {
+      success: false,
+      error: String(err),
+      uploadFailures: { images: failedImageUploads, audio: failedAudioUploads },
+    };
   }
 }
 
 /* Fetch all reports from server */
 export async function fetchServerReports(): Promise<SubmittedReport[]> {
+  if (!API_BASE) {
+    console.error("[reportStore] API_BASE missing. Verify Supabase env vars.");
+    return [];
+  }
   try {
     const res = await fetch(`${API_BASE}/reports`, { headers: apiHeaders });
     if (!res.ok) {
