@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, type PointerEvent } from "react";
 import { Mic, Square, Trash2, Plus, AlertTriangle } from "lucide-react";
 
 const GUINDO = "#AB1738";
@@ -94,6 +94,7 @@ export function AudioRecorder911({
   const transcriptRef = useRef<string>(""); // accumulated final transcript
   const interimRef = useRef<string>("");
   const shouldRestartRecognitionRef = useRef<boolean>(false);
+  const isPressingRef = useRef<boolean>(false);
   const streamRef = useRef<MediaStream | null>(null);
   const audioUrlsRef = useRef<Record<string, string>>({});
 
@@ -186,6 +187,7 @@ export function AudioRecorder911({
     }
     setIsRecording(false);
     setInterimText("");
+    setLiveTranscript("");
   }, []);
 
   /* ─── Start recording ─── */
@@ -205,10 +207,23 @@ export function AudioRecorder911({
       setElapsed(0);
       audioChunksRef.current = [];
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true },
-      });
-      streamRef.current = stream;
+      let stream = streamRef.current;
+      const needsFreshStream =
+        !stream ||
+        stream
+          .getAudioTracks()
+          .every((track) => track.readyState === "ended");
+
+      if (needsFreshStream) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true },
+        });
+        streamRef.current = stream;
+      } else {
+        stream.getAudioTracks().forEach((track) => {
+          track.enabled = true;
+        });
+      }
 
       const selectedMimeType = selectRecorderMimeType();
       let recorder: MediaRecorder;
@@ -229,8 +244,9 @@ export function AudioRecorder911({
       recorder.onstop = () => {
         shouldRestartRecognitionRef.current = false;
         if (streamRef.current) {
-          streamRef.current.getTracks().forEach((t) => t.stop());
-          streamRef.current = null;
+          streamRef.current.getAudioTracks().forEach((track) => {
+            track.enabled = false;
+          });
         }
         const blob = new Blob(audioChunksRef.current, { type: mimeType });
         if (blob.size === 0) {
@@ -333,7 +349,11 @@ export function AudioRecorder911({
       }
 
       setIsRecording(true);
+      if (!isPressingRef.current) {
+        stopRecording();
+      }
     } catch (err: unknown) {
+      isPressingRef.current = false;
       const name = err instanceof Error ? err.name : "";
       if (name === "NotAllowedError" || name === "PermissionDeniedError") {
         alert(
@@ -343,7 +363,41 @@ export function AudioRecorder911({
         alert("No se pudo acceder al micrófono. Verifica los permisos.");
       }
     }
-  }, [canAddMore, isMicSupported, onChange, values]);
+  }, [canAddMore, isMicSupported, onChange, stopRecording, values]);
+
+  const startPressRecording = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      if (!isMicSupported || !canAddMore || isRecording || isPressingRef.current) {
+        return;
+      }
+      isPressingRef.current = true;
+      void startRecording();
+    },
+    [canAddMore, isMicSupported, isRecording, startRecording],
+  );
+
+  const stopPressRecording = useCallback(() => {
+    if (!isPressingRef.current) return;
+    isPressingRef.current = false;
+    if (isRecording) {
+      stopRecording();
+    }
+  }, [isRecording, stopRecording]);
+
+  useEffect(() => {
+    const handleRelease = () => {
+      stopPressRecording();
+    };
+
+    window.addEventListener("pointerup", handleRelease);
+    window.addEventListener("pointercancel", handleRelease);
+
+    return () => {
+      window.removeEventListener("pointerup", handleRelease);
+      window.removeEventListener("pointercancel", handleRelease);
+    };
+  }, [stopPressRecording]);
 
   const deleteNote = useCallback(
     (id: string) => {
@@ -388,100 +442,107 @@ export function AudioRecorder911({
               >
                 Grabando... {formatTime(elapsed)}
               </span>
-              <button
-                onClick={stopRecording}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg active:opacity-60 transition-opacity"
-                style={{
-                  background: GUINDO,
-                  minHeight: 44,
-                }}
-                aria-label="Detener grabación"
-              >
-                <Square
-                  className="w-3.5 h-3.5 text-white"
-                  strokeWidth={0}
-                  fill="white"
-                />
-                <span
-                  className="text-[14px] text-white"
-                  style={{ fontWeight: 700 }}
-                >
-                  Detener
-                </span>
-              </button>
             </div>
-
-            {hasLiveTranscript ? (
-              <div className="px-3 pb-3">
-                <div
-                  className="rounded-lg px-2.5 py-2"
-                  style={{
-                    background: "rgba(171,23,56,0.04)",
-                    border: "1px solid rgba(171,23,56,0.1)",
-                  }}
-                >
-                  <p
-                    className="text-[13px] text-[#1C1C1E]"
-                    style={{ lineHeight: 1.55 }}
-                  >
-                    <span>{liveTranscript}</span>
-                    {interimText && (
-                      <span className="text-[#8E8E93]">{interimText}</span>
-                    )}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="px-3 pb-3">
-                <p className="text-[12px] text-[#8E8E93] italic">
-                  {isSpeechRecognitionSupported
-                    ? "Hable claramente para ver la transcripcion en tiempo real..."
-                    : "Tu dispositivo grabara el audio, pero no soporta transcripcion automatica en tiempo real."}
-                </p>
-              </div>
-            )}
           </>
-        ) : (
-          <button
-            onClick={isMicSupported && canAddMore ? startRecording : undefined}
-            disabled={!isMicSupported || !canAddMore}
-            className="w-full flex items-center gap-3 px-3 py-3 transition-all active:scale-[0.99]"
+        ) : null}
+
+        <button
+          onPointerDown={startPressRecording}
+          onPointerUp={stopPressRecording}
+          onPointerCancel={stopPressRecording}
+          onPointerLeave={isRecording ? stopPressRecording : undefined}
+          disabled={!isMicSupported || !canAddMore}
+          className="w-full flex items-center gap-3 px-3 py-3 transition-all active:scale-[0.99]"
+          style={{
+            opacity: !isMicSupported || !canAddMore ? 0.55 : 1,
+            touchAction: "none",
+          }}
+          aria-label={isRecording ? "Suelta para detener grabacion" : "Manten presionado para grabar"}
+        >
+          <div
+            className="w-12 h-12 rounded-full flex items-center justify-center shrink-0"
             style={{
-              opacity: !isMicSupported || !canAddMore ? 0.55 : 1,
+              background:
+                isMicSupported && canAddMore
+                  ? `linear-gradient(135deg, ${GUINDO}, ${GUINDO_DARK})`
+                  : "#C7C7CC",
             }}
-            aria-label="Agregar nota de voz"
           >
-            <div
-              className="w-12 h-12 rounded-full flex items-center justify-center shrink-0"
-              style={{
-                background:
-                  isMicSupported && canAddMore
-                    ? `linear-gradient(135deg, ${GUINDO}, ${GUINDO_DARK})`
-                    : "#C7C7CC",
-              }}
-            >
+            {isRecording ? (
+              <Square
+                className="w-4 h-4 text-white"
+                strokeWidth={0}
+                fill="white"
+              />
+            ) : (
               <Mic className="w-5 h-5 text-white" strokeWidth={1.8} />
-            </div>
-            <div className="text-left flex-1 min-w-0">
-              <p
-                className="text-[15px] text-[#AB1738]"
-                style={{ fontWeight: 700 }}
-              >
-                {canAddMore
-                  ? "Agregar nota de voz"
-                  : `Límite alcanzado (${maxNotes})`}
-              </p>
-              <p className="text-[12px] text-[#8E8E93]">
-                {!isMicSupported
-                  ? "Grabacion no disponible en este navegador"
+            )}
+          </div>
+          <div className="text-left flex-1 min-w-0">
+            <p
+              className="text-[15px] text-[#AB1738]"
+              style={{ fontWeight: 700 }}
+            >
+              {!canAddMore
+                ? `Limite alcanzado (${maxNotes})`
+                : isRecording
+                  ? `Grabando... ${formatTime(elapsed)}`
+                  : "Manten presionado para grabar"}
+            </p>
+            <p className="text-[12px] text-[#8E8E93]">
+              {!isMicSupported
+                ? "Grabacion no disponible en este navegador"
+                : isRecording
+                  ? "Suelta para guardar la nota."
                   : isSpeechRecognitionSupported
                     ? "Asegurate de acercarte lo suficiente al microfono para tener una buena transcripcion."
                     : "Este dispositivo grabara la nota de voz, pero la transcripcion automatica puede no estar disponible."}
+            </p>
+          </div>
+          {isRecording ? (
+            <span
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{
+                background: GUINDO,
+                display: "inline-block",
+                animation: "pulse 1s ease-in-out infinite",
+              }}
+            />
+          ) : (
+            <Plus className="w-4 h-4 text-[#AB1738]" strokeWidth={2.2} />
+          )}
+        </button>
+
+        {isRecording &&
+          (hasLiveTranscript ? (
+            <div className="px-3 pb-3">
+              <div
+                className="rounded-lg px-2.5 py-2"
+                style={{
+                  background: "rgba(171,23,56,0.04)",
+                  border: "1px solid rgba(171,23,56,0.1)",
+                }}
+              >
+                <p
+                  className="text-[13px] text-[#1C1C1E]"
+                  style={{ lineHeight: 1.55 }}
+                >
+                  <span>{liveTranscript}</span>
+                  {interimText && (
+                    <span className="text-[#8E8E93]">{interimText}</span>
+                  )}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="px-3 pb-3">
+              <p className="text-[12px] text-[#8E8E93] italic">
+                {isSpeechRecognitionSupported
+                  ? "Hable claramente para ver la transcripcion en tiempo real..."
+                  : "Tu dispositivo grabara el audio, pero no soporta transcripcion automatica en tiempo real."}
               </p>
             </div>
-            <Plus className="w-4 h-4 text-[#AB1738]" strokeWidth={2.2} />
-          </button>
-        )}
+          ))}
       </div>
 
       {values.length > 0 && (
@@ -588,3 +649,4 @@ export function AudioRecorder911({
     </div>
   );
 }
+
