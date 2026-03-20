@@ -1,12 +1,17 @@
-/* ═══════════════════════════════════════════════════════════════
-   reportStore.ts — Server-synced + localStorage cache for reports
-   Personal de Campo → Servidor → Push a todos → Coordinador Regional
-   ═══════════════════════════════════════════════════════════════ */
-
 import type { Reporte911, TrazabilidadItem } from "./feedData";
 import { API_BASE, apiHeaders } from "../lib/apiClient";
 
 const STORAGE_KEY = "pc-tamaulipas-reports";
+const IMAGE_LOCAL_ONLY = "[image-local-only]";
+const AUDIO_LOCAL_ONLY = "[audio-local-only]";
+
+export interface SubmittedAudioNote {
+  id: string;
+  src: string;
+  mimeType: string;
+  transcript: string;
+  durationSec: number;
+}
 
 export interface SubmittedReport {
   id: string;
@@ -17,21 +22,22 @@ export interface SubmittedReport {
   descripcion: string;
   prioridad: "alta" | "media" | "baja";
   reportadoPor: string;
-  imageDataUrl: string | null; // base64 preview for prototype
-  audioDataUrl?: string | null; // base64 audio blob (local-only if large)
-  audioTranscript?: string | null; // transcripción de voz
+  imageDataUrl: string | null;
+  audioNotes?: SubmittedAudioNote[];
+  // Legacy fields kept for backward compatibility with older cached reports.
+  audioDataUrl?: string | null;
+  audioTranscript?: string | null;
   lat: number | null;
   lng: number | null;
-  timestamp: string; // ISO
-  sentAt: number; // Date.now()
+  timestamp: string;
+  sentAt: number;
 }
 
-/* ─── Folio generator ─── */
+/* Folio generator */
 let _folioSeq = 200;
 
-// Initialize sequence from existing reports to avoid duplicate IDs
 try {
-  const raw = localStorage.getItem("pc-tamaulipas-reports");
+  const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
     const existing: { folio?: string }[] = JSON.parse(raw);
     for (const r of existing) {
@@ -42,22 +48,157 @@ try {
       }
     }
   }
-} catch { /* ignore */ }
+} catch {
+  // ignore
+}
 
 function nextFolio(): string {
   const num = _folioSeq++;
   return `911-2026-${String(num).padStart(4, "0")}`;
 }
 
-/* ─── Local cache CRUD ─── */
+function normalizeAudioNotes(raw: unknown): SubmittedAudioNote[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item, idx) => {
+      const note = (item || {}) as Partial<SubmittedAudioNote>;
+      return {
+        id: typeof note.id === "string" && note.id.trim().length > 0 ? note.id : `audio-${idx + 1}`,
+        src: typeof note.src === "string" ? note.src : "",
+        mimeType: typeof note.mimeType === "string" && note.mimeType ? note.mimeType : "audio/webm",
+        transcript: typeof note.transcript === "string" ? note.transcript : "",
+        durationSec:
+          typeof note.durationSec === "number" && Number.isFinite(note.durationSec)
+            ? Math.max(0, Math.round(note.durationSec))
+            : 0,
+      };
+    })
+    .filter((note) => note.src.length > 0 || note.transcript.trim().length > 0);
+}
+
+function ensureAudioNotes(report: SubmittedReport): SubmittedAudioNote[] {
+  const normalized = normalizeAudioNotes(report.audioNotes);
+  if (normalized.length > 0) return normalized;
+
+  const legacySrc = typeof report.audioDataUrl === "string" ? report.audioDataUrl : "";
+  const legacyTranscript = typeof report.audioTranscript === "string" ? report.audioTranscript : "";
+  if (!legacySrc && !legacyTranscript) return [];
+
+  return [
+    {
+      id: `legacy-${report.id || "audio"}`,
+      src: legacySrc,
+      mimeType: "audio/webm",
+      transcript: legacyTranscript,
+      durationSec: 0,
+    },
+  ];
+}
+
+function normalizeReport(report: SubmittedReport): SubmittedReport {
+  const normalizedNotes = ensureAudioNotes(report);
+  const firstTranscript =
+    normalizedNotes.map((n) => n.transcript.trim()).find((text) => text.length > 0) || null;
+  const firstAudioSrc = normalizedNotes.find((n) => n.src)?.src || null;
+
+  return {
+    ...report,
+    imageDataUrl: typeof report.imageDataUrl === "string" ? report.imageDataUrl : null,
+    audioNotes: normalizedNotes,
+    audioDataUrl:
+      typeof report.audioDataUrl === "string"
+        ? report.audioDataUrl
+        : firstAudioSrc,
+    audioTranscript:
+      typeof report.audioTranscript === "string"
+        ? report.audioTranscript
+        : firstTranscript,
+  };
+}
+
+function stripHeavyMedia(report: SubmittedReport): SubmittedReport {
+  const normalized = normalizeReport(report);
+  return {
+    ...normalized,
+    imageDataUrl: null,
+    audioNotes: normalized.audioNotes?.map((note) => ({ ...note, src: "" })) || [],
+    audioDataUrl: null,
+  };
+}
+
+function mergeAudioNotesPreferLocal(
+  serverNotes: SubmittedAudioNote[],
+  localNotes: SubmittedAudioNote[],
+): SubmittedAudioNote[] {
+  const localById = new Map(localNotes.map((note) => [note.id, note]));
+  const merged: SubmittedAudioNote[] = serverNotes.map((serverNote) => {
+    const localNote = localById.get(serverNote.id);
+    const serverHasPlayableSrc = !!serverNote.src && serverNote.src !== AUDIO_LOCAL_ONLY;
+    const localHasPlayableSrc = !!localNote?.src && localNote.src !== AUDIO_LOCAL_ONLY;
+    return {
+      ...serverNote,
+      src: serverHasPlayableSrc ? serverNote.src : localHasPlayableSrc ? localNote.src : serverNote.src,
+      mimeType: serverNote.mimeType || localNote?.mimeType || "audio/webm",
+      durationSec: serverNote.durationSec || localNote?.durationSec || 0,
+      transcript: serverNote.transcript || localNote?.transcript || "",
+    };
+  });
+
+  const mergedIds = new Set(merged.map((note) => note.id));
+  for (const localNote of localNotes) {
+    if (!mergedIds.has(localNote.id)) {
+      merged.push(localNote);
+    }
+  }
+  return merged;
+}
+
+function mergeServerWithLocal(
+  serverReport: SubmittedReport,
+  localReport?: SubmittedReport,
+): SubmittedReport {
+  if (!localReport) return normalizeReport(serverReport);
+
+  const serverNormalized = normalizeReport(serverReport);
+  const localNormalized = normalizeReport(localReport);
+
+  const serverHasImage =
+    !!serverNormalized.imageDataUrl && serverNormalized.imageDataUrl !== IMAGE_LOCAL_ONLY;
+  const localHasImage =
+    !!localNormalized.imageDataUrl && localNormalized.imageDataUrl !== IMAGE_LOCAL_ONLY;
+
+  const imageDataUrl = serverHasImage
+    ? serverNormalized.imageDataUrl
+    : localHasImage
+      ? localNormalized.imageDataUrl
+      : serverNormalized.imageDataUrl;
+
+  const mergedAudioNotes = mergeAudioNotesPreferLocal(
+    ensureAudioNotes(serverNormalized),
+    ensureAudioNotes(localNormalized),
+  );
+
+  return normalizeReport({
+    ...serverNormalized,
+    imageDataUrl,
+    audioNotes: mergedAudioNotes,
+    audioDataUrl: serverNormalized.audioDataUrl || localNormalized.audioDataUrl || null,
+    audioTranscript: serverNormalized.audioTranscript || localNormalized.audioTranscript || null,
+  });
+}
+
+/* Local cache CRUD */
 export function getSubmittedReports(): SubmittedReport[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    const parsed: SubmittedReport[] = JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const normalized = parsed.map((item) => normalizeReport(item as SubmittedReport));
+
     // Deduplicate by id (keep first occurrence = newest)
     const seen = new Set<string>();
-    return parsed.filter((r) => {
+    return normalized.filter((r) => {
       if (seen.has(r.id)) return false;
       seen.add(r.id);
       return true;
@@ -67,44 +208,44 @@ export function getSubmittedReports(): SubmittedReport[] {
   }
 }
 
-/** Save report to local cache con manejo de QuotaExceededError de iOS Safari */
 function saveToLocalCache(report: SubmittedReport): void {
-  const existing = getSubmittedReports().filter((r) => r.id !== report.id);
-  existing.unshift(report); // newest first
+  const normalizedReport = normalizeReport(report);
+  const existing = getSubmittedReports().filter((r) => r.id !== normalizedReport.id);
+  existing.unshift(normalizedReport);
 
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-  } catch (_e1) {
-    // QuotaExceededError — liberar espacio eliminando imágenes y audios de reportes anteriores
-    console.warn("[reportStore] localStorage quota exceeded — limpiando imágenes y audios antiguos");
+  } catch {
+    console.warn("[reportStore] localStorage quota exceeded. Stripping old media payloads.");
     try {
-      const stripped = existing.map((r, i) =>
-        // Preservar imagen y audio solo del reporte más reciente (index 0)
-        i === 0 ? r : { ...r, imageDataUrl: null, audioDataUrl: null }
-      );
+      const stripped = existing.map((r, i) => (i === 0 ? r : stripHeavyMedia(r)));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(stripped));
-    } catch (_e2) {
-      // Último recurso: guardar solo el reporte nuevo sin imagen ni audio
-      console.warn("[reportStore] localStorage aún lleno — guardando sin imagen ni audio");
+    } catch {
+      console.warn("[reportStore] localStorage still full. Saving only latest report with text/transcripts.");
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify([{ ...report, imageDataUrl: null, audioDataUrl: null }]));
-      } catch (_e3) {
-        console.error("[reportStore] localStorage completamente lleno, no se pudo guardar localmente");
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([stripHeavyMedia(normalizedReport)]));
+      } catch {
+        console.error("[reportStore] localStorage completely full. Could not persist report cache.");
       }
     }
   }
 }
 
-/** Merge server reports into local cache (deduplicating) */
 function mergeServerReports(serverReports: SubmittedReport[]): void {
   const local = getSubmittedReports();
+  const localById = new Map(local.map((r) => [r.id, r]));
   const merged = new Map<string, SubmittedReport>();
-  // Server reports take priority
-  for (const r of serverReports) merged.set(r.id, r);
-  // Keep local-only reports that haven't synced yet
-  for (const r of local) {
-    if (!merged.has(r.id)) merged.set(r.id, r);
+
+  for (const serverReport of serverReports) {
+    const localVersion = localById.get(serverReport.id);
+    merged.set(serverReport.id, mergeServerWithLocal(serverReport, localVersion));
   }
+  for (const localReport of local) {
+    if (!merged.has(localReport.id)) {
+      merged.set(localReport.id, localReport);
+    }
+  }
+
   const sorted = Array.from(merged.values()).sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
 }
@@ -120,7 +261,10 @@ function dataUrlToFile(dataUrl: string, fallbackName: string): File {
   return new File([bytes], `${fallbackName}.${ext}`, { type: mime });
 }
 
-async function uploadEvidenceDataUrl(dataUrl: string, folder: "reports" | "monitoring"): Promise<string | null> {
+async function uploadEvidenceDataUrl(
+  dataUrl: string,
+  folder: "reports" | "monitoring",
+): Promise<string | null> {
   try {
     const file = dataUrlToFile(dataUrl, `evidence-${Date.now()}`);
     const formData = new FormData();
@@ -140,28 +284,61 @@ async function uploadEvidenceDataUrl(dataUrl: string, folder: "reports" | "monit
   }
 }
 
-/* ─── Server sync: save report + push notification ─── */
-export async function saveReport(report: SubmittedReport): Promise<{ success: boolean; push?: { sent: number; total: number } }> {
-  const reportToSave: SubmittedReport = { ...report };
+/* Server sync: save report + push notification */
+export async function saveReport(
+  report: SubmittedReport,
+): Promise<{ success: boolean; push?: { sent: number; total: number } }> {
+  const reportToSave = normalizeReport(report);
+
   if (reportToSave.imageDataUrl && reportToSave.imageDataUrl.startsWith("data:")) {
     const uploadedUrl = await uploadEvidenceDataUrl(reportToSave.imageDataUrl, "reports");
     if (uploadedUrl) reportToSave.imageDataUrl = uploadedUrl;
   }
 
-  // 1. Always save to local cache immediately (optimistic)
+  const uploadedAudioNotes: SubmittedAudioNote[] = [];
+  for (const note of ensureAudioNotes(reportToSave)) {
+    let src = note.src;
+    if (src && src.startsWith("data:")) {
+      const uploadedUrl = await uploadEvidenceDataUrl(src, "reports");
+      if (uploadedUrl) src = uploadedUrl;
+    }
+    uploadedAudioNotes.push({
+      ...note,
+      src,
+    });
+  }
+  reportToSave.audioNotes = uploadedAudioNotes;
+  if (!reportToSave.audioTranscript) {
+    const firstTranscript =
+      uploadedAudioNotes.map((n) => n.transcript.trim()).find((text) => text.length > 0) || null;
+    reportToSave.audioTranscript = firstTranscript;
+  }
+  if (!reportToSave.audioDataUrl) {
+    reportToSave.audioDataUrl = uploadedAudioNotes.find((n) => n.src)?.src || null;
+  }
+
   saveToLocalCache(reportToSave);
   window.dispatchEvent(new CustomEvent("reports-updated"));
 
-  // 2. Send to server (which also triggers push to all devices)
   try {
-    // Don't send large base64 blobs to server (too large for KV store / Edge Function payload)
-    const serverReport = { ...reportToSave };
-    if (serverReport.imageDataUrl && serverReport.imageDataUrl.length > 200_000) {
-      serverReport.imageDataUrl = "[image-local-only]";
+    const serverReport: SubmittedReport = normalizeReport({ ...reportToSave });
+    if (
+      serverReport.imageDataUrl &&
+      serverReport.imageDataUrl.startsWith("data:") &&
+      serverReport.imageDataUrl.length > 200_000
+    ) {
+      serverReport.imageDataUrl = IMAGE_LOCAL_ONLY;
     }
-    // Audio can be several MB — always mark as local-only on server
-    if (serverReport.audioDataUrl) {
-      serverReport.audioDataUrl = "[audio-local-only]";
+
+    serverReport.audioNotes = ensureAudioNotes(serverReport).map((note) => {
+      if (note.src && note.src.startsWith("data:")) {
+        return { ...note, src: AUDIO_LOCAL_ONLY };
+      }
+      return note;
+    });
+
+    if (serverReport.audioDataUrl && serverReport.audioDataUrl.startsWith("data:")) {
+      serverReport.audioDataUrl = AUDIO_LOCAL_ONLY;
     }
 
     const res = await fetch(`${API_BASE}/reports`, {
@@ -177,7 +354,9 @@ export async function saveReport(report: SubmittedReport): Promise<{ success: bo
     }
 
     const data = await res.json();
-    console.log(`[reportStore] Report synced to server: ${reportToSave.id}, push: ${data.push?.sent}/${data.push?.total}`);
+    console.log(
+      `[reportStore] Report synced to server: ${reportToSave.id}, push: ${data.push?.sent}/${data.push?.total}`,
+    );
     return { success: true, push: data.push };
   } catch (err) {
     console.error(`[reportStore] Server sync error (report saved locally): ${err}`);
@@ -185,7 +364,7 @@ export async function saveReport(report: SubmittedReport): Promise<{ success: bo
   }
 }
 
-/* ─── Fetch all reports from server ─── */
+/* Fetch all reports from server */
 export async function fetchServerReports(): Promise<SubmittedReport[]> {
   try {
     const res = await fetch(`${API_BASE}/reports`, { headers: apiHeaders });
@@ -194,9 +373,10 @@ export async function fetchServerReports(): Promise<SubmittedReport[]> {
       return [];
     }
     const data = await res.json();
-    const reports: SubmittedReport[] = data.reports || [];
+    const reports: SubmittedReport[] = Array.isArray(data.reports)
+      ? data.reports.map((item: SubmittedReport) => normalizeReport(item))
+      : [];
 
-    // Merge into local cache
     if (reports.length > 0) {
       mergeServerReports(reports);
       window.dispatchEvent(new CustomEvent("reports-updated"));
@@ -214,7 +394,7 @@ export function clearReports(): void {
   window.dispatchEvent(new CustomEvent("reports-updated"));
 }
 
-/* ─── Create a SubmittedReport from form data ─── */
+/* Create a SubmittedReport from form data */
 export function createReport(data: {
   tipoEmergencia: string;
   ubicacion: string;
@@ -223,6 +403,7 @@ export function createReport(data: {
   prioridad: "alta" | "media" | "baja";
   reportadoPor: string;
   imageDataUrl: string | null;
+  audioNotes?: SubmittedAudioNote[];
   audioDataUrl?: string | null;
   audioTranscript?: string | null;
   lat: number | null;
@@ -237,20 +418,25 @@ export function createReport(data: {
   const mi = String(now.getMinutes()).padStart(2, "0");
   const timestamp = `${dd}/${mm}/${yyyy}, ${hh}:${mi}`;
 
+  const audioNotes = normalizeAudioNotes(data.audioNotes);
+  const firstTranscript = audioNotes.map((n) => n.transcript.trim()).find((text) => text.length > 0) || null;
+  const firstAudioSrc = audioNotes.find((n) => n.src)?.src || null;
+
   return {
     id: folio,
     folio,
     tipoEmergencia: data.tipoEmergencia || "Emergencia General",
-    ubicacion: data.ubicacion || "Ubicación pendiente de registro",
+    ubicacion: data.ubicacion || "Ubicacion pendiente de registro",
     municipio: data.municipio || "Ciudad Victoria",
     descripcion:
       data.descripcion ||
-      "Pendiente de captura — Lorem ipsum dolor sit amet, información en proceso de actualización por personal en campo. Se requiere verificación en sitio para completar la descripción del evento.",
+      "Pendiente de captura. Informacion en proceso de actualizacion por personal en campo.",
     prioridad: data.prioridad,
     reportadoPor: data.reportadoPor || "Personal de Campo (sin identificar)",
     imageDataUrl: data.imageDataUrl,
-    audioDataUrl: data.audioDataUrl ?? null,
-    audioTranscript: data.audioTranscript ?? null,
+    audioNotes,
+    audioDataUrl: data.audioDataUrl ?? firstAudioSrc,
+    audioTranscript: data.audioTranscript ?? firstTranscript,
     lat: data.lat,
     lng: data.lng,
     timestamp,
@@ -258,15 +444,29 @@ export function createReport(data: {
   };
 }
 
-/* ─── Avatar colors pool ─── */
 const AVATAR_COLORS = [
-  "bg-red-600", "bg-blue-600", "bg-emerald-700", "bg-amber-700",
-  "bg-indigo-600", "bg-cyan-600", "bg-rose-600", "bg-primary",
+  "bg-red-600",
+  "bg-blue-600",
+  "bg-emerald-700",
+  "bg-amber-700",
+  "bg-indigo-600",
+  "bg-cyan-600",
+  "bg-rose-600",
+  "bg-primary",
 ];
 
-/* ─── Convert SubmittedReport → FeedItem (Reporte911) ─── */
+function getAudioExtension(mimeType: string): string {
+  if (mimeType.includes("mp4")) return "m4a";
+  if (mimeType.includes("mpeg")) return "mp3";
+  if (mimeType.includes("ogg")) return "ogg";
+  return "webm";
+}
+
+/* Convert SubmittedReport -> FeedItem (Reporte911) */
 export function toFeedItem(report: SubmittedReport): Reporte911 {
-  const initials = report.reportadoPor
+  const normalized = normalizeReport(report);
+
+  const initials = normalized.reportadoPor
     .split(" ")
     .map((w) => w[0])
     .join("")
@@ -274,11 +474,11 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
     .toUpperCase();
 
   const colorIdx =
-    report.id.split("").reduce((a, c) => a + c.charCodeAt(0), 0) %
+    normalized.id.split("").reduce((a, c) => a + c.charCodeAt(0), 0) %
     AVATAR_COLORS.length;
 
-  // Calculate relative time
-  const diffMs = Date.now() - report.sentAt;
+  const sentAt = typeof normalized.sentAt === "number" ? normalized.sentAt : Date.now();
+  const diffMs = Date.now() - sentAt;
   const diffMin = Math.floor(diffMs / 60000);
   let relativeTime: string;
   if (diffMin < 1) relativeTime = "Hace un momento";
@@ -294,77 +494,118 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
     baja: "Registrado",
   };
 
-  const images: string[] = report.imageDataUrl && report.imageDataUrl !== "[image-local-only]" ? [report.imageDataUrl] : [];
+  const images: string[] =
+    normalized.imageDataUrl && normalized.imageDataUrl !== IMAGE_LOCAL_ONLY
+      ? [normalized.imageDataUrl]
+      : [];
+
+  const hora = normalized.timestamp.split(", ")[1] || "00:00";
+  const safeDescription = (normalized.descripcion || "").trim();
+  const summaryForThread = safeDescription.length > 80
+    ? `${safeDescription.slice(0, 80)}...`
+    : safeDescription;
 
   const trazabilidad: TrazabilidadItem[] = [
     {
       actor: "Sistema Central",
       tipo: "Sistema",
-      hora: report.timestamp.split(", ")[1] || "00:00",
-      mensaje: `Reporte de ${report.tipoEmergencia.toLowerCase()} recibido desde app móvil de Personal de Campo.`,
+      hora,
+      mensaje: `Reporte de ${normalized.tipoEmergencia.toLowerCase()} recibido desde app movil de Personal de Campo.`,
     },
     {
-      actor: report.reportadoPor,
+      actor: normalized.reportadoPor,
       tipo: "Estatus",
-      hora: report.timestamp.split(", ")[1] || "00:00",
-      mensaje: `Reporte enviado desde campo. Prioridad: ${report.prioridad.toUpperCase()}. ${report.descripcion.slice(0, 80)}...`,
+      hora,
+      mensaje: `Reporte enviado desde campo. Prioridad: ${normalized.prioridad.toUpperCase()}. ${summaryForThread}`,
     },
   ];
 
-  // Add image evidence entry if image exists
-  if (report.imageDataUrl && report.imageDataUrl !== "[image-local-only]") {
+  if (images.length > 0) {
     trazabilidad.push({
-      actor: report.reportadoPor,
+      actor: normalized.reportadoPor,
       tipo: "Evidencia",
-      hora: report.timestamp.split(", ")[1] || "00:00",
-      mensaje: "Evidencia fotográfica adjunta desde dispositivo móvil.",
+      hora,
+      mensaje: "Evidencia fotografica adjunta desde dispositivo movil.",
     });
   }
 
-  // Add audio evidence entry if audio/transcript exists
-  if (report.audioDataUrl || report.audioTranscript) {
+  const audioNotes = ensureAudioNotes(normalized).filter(
+    (note) => note.src.length > 0 || note.transcript.trim().length > 0,
+  );
+
+  audioNotes.forEach((note, idx) => {
+    const transcript = note.transcript.trim();
+    const shortTranscript =
+      transcript.length > 0
+        ? transcript.length > 110
+          ? `${transcript.slice(0, 110)}...`
+          : transcript
+        : "";
+
     trazabilidad.push({
-      actor: report.reportadoPor,
+      actor: normalized.reportadoPor,
       tipo: "Evidencia",
-      hora: report.timestamp.split(", ")[1] || "00:00",
-      mensaje: report.audioTranscript
-        ? `Descripción de voz: "${report.audioTranscript.slice(0, 100)}${report.audioTranscript.length > 100 ? "…" : ""}"`
-        : "Evidencia de audio adjunta desde dispositivo móvil.",
+      hora,
+      mensaje:
+        shortTranscript.length > 0
+          ? `Nota de voz ${idx + 1}: ${shortTranscript}`
+          : `Nota de voz ${idx + 1} adjunta desde dispositivo movil.`,
+      transcript: transcript || undefined,
+      audioSrc:
+        note.src && note.src !== AUDIO_LOCAL_ONLY
+          ? note.src
+          : undefined,
     });
-  }
+  });
+
+  const audioEvidencias = audioNotes
+    .filter((note) => note.src && note.src !== AUDIO_LOCAL_ONLY)
+    .map((note, idx) => ({
+      kind: "audio" as const,
+      nombre: `nota_voz_${idx + 1}.${getAudioExtension(note.mimeType)}`,
+      src: note.src,
+      transcript: note.transcript.trim() || undefined,
+    }));
+
+  const evidenciasCount =
+    images.length +
+    audioNotes.filter((note) => note.src.length > 0 || note.transcript.trim().length > 0).length;
 
   return {
     type: "reporte911",
-    id: report.id,
+    id: normalized.id,
     isNew: true,
-    isPinned: report.prioridad === "alta",
+    isPinned: normalized.prioridad === "alta",
     relativeTime,
-    timestamp: report.timestamp,
+    timestamp: normalized.timestamp,
     autor: {
-      nombre: report.reportadoPor,
+      nombre: normalized.reportadoPor,
       iniciales: initials || "PC",
       rol: "Operador de Campo - 911",
       avatarColor: AVATAR_COLORS[colorIdx],
     },
-    folio: report.folio,
-    titulo: report.tipoEmergencia,
-    descripcion: report.descripcion,
-    ubicacion: report.ubicacion,
-    municipio: report.municipio,
-    coords: report.lat != null && report.lng != null ? { lat: report.lat, lng: report.lng } : undefined,
-    estatus: statusMap[report.prioridad] || "Registrado",
+    folio: normalized.folio,
+    titulo: normalized.tipoEmergencia,
+    descripcion: normalized.descripcion,
+    ubicacion: normalized.ubicacion,
+    municipio: normalized.municipio,
+    coords:
+      normalized.lat != null && normalized.lng != null
+        ? { lat: normalized.lat, lng: normalized.lng }
+        : undefined,
+    estatus: statusMap[normalized.prioridad] || "Registrado",
     images,
+    evidencias: audioEvidencias,
     kpis: {
-      personal: report.prioridad === "alta" ? 4 : report.prioridad === "media" ? 2 : 1,
-      unidades: report.prioridad === "alta" ? 2 : 1,
+      personal: normalized.prioridad === "alta" ? 4 : normalized.prioridad === "media" ? 2 : 1,
+      unidades: normalized.prioridad === "alta" ? 2 : 1,
       atencionesPrehosp: 0,
       duracionMin: 0,
     },
     conteos: {
       actualizaciones: trazabilidad.length,
       actividades: 1,
-      evidencias: (report.imageDataUrl && report.imageDataUrl !== "[image-local-only]" ? 1 : 0) +
-                  (report.audioDataUrl || report.audioTranscript ? 1 : 0),
+      evidencias: evidenciasCount,
     },
     trazabilidad,
   };

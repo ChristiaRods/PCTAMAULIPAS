@@ -142,6 +142,26 @@ function ThreadReply({ entry, isLast }: { entry: TrazabilidadItem; isLast: boole
         </div>
         <div className="rounded-xl rounded-tl-[4px] p-3 bg-[#F2F2F7] border border-[#E5E5EA]">
           <p className="text-[14px] text-[#3A3A3C] leading-relaxed">{entry.mensaje}</p>
+          {entry.transcript && (
+            <div className="mt-2.5 pt-2.5 border-t border-[#E5E5EA]">
+              <p className="text-[11px] text-[#8E8E93] uppercase tracking-wider mb-1">
+                Transcripción completa
+              </p>
+              <p className="text-[13px] text-[#1C1C1E] leading-relaxed">
+                {entry.transcript}
+              </p>
+            </div>
+          )}
+          {entry.audioSrc && (
+            <div className="mt-2.5">
+              <audio
+                controls
+                preload="metadata"
+                src={entry.audioSrc}
+                className="w-full h-10"
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -462,7 +482,12 @@ export function AuditDetail() {
 
   // Collect all evidence images (for gallery)
   const galleryImages: { url: string; label: string }[] = [];
-  const galleryFiles: { kind: string; nombre: string }[] = [];
+  const galleryFiles: {
+    kind: string;
+    nombre: string;
+    src: string;
+    transcript?: string;
+  }[] = [];
 
   if (isMonitoreo) {
     const mon = item as Monitoreo;
@@ -470,7 +495,12 @@ export function AuditDetail() {
       if (ev.kind === "image") {
         galleryImages.push({ url: ev.src, label: ev.nombre });
       } else {
-        galleryFiles.push({ kind: ev.kind, nombre: ev.nombre });
+        galleryFiles.push({
+          kind: ev.kind,
+          nombre: ev.nombre,
+          src: ev.src,
+          transcript: ev.transcript,
+        });
       }
     });
   } else {
@@ -478,11 +508,21 @@ export function AuditDetail() {
     item.images.forEach((img, i) => {
       galleryImages.push({ url: img, label: `Evidencia ${i + 1}` });
     });
+    (item.evidencias || []).forEach((ev) => {
+      if (ev.kind === "image") {
+        galleryImages.push({ url: ev.src, label: ev.nombre });
+      } else {
+        galleryFiles.push({
+          kind: ev.kind,
+          nombre: ev.nombre,
+          src: ev.src,
+          transcript: ev.transcript,
+        });
+      }
+    });
   }
 
-  const totalEvidenceCount = isMonitoreo
-    ? (item as Monitoreo).evidencias.length
-    : (item as Reporte911).conteos.evidencias;
+  const totalEvidenceCount = galleryImages.length + galleryFiles.length;
 
   return (
     <div className="min-h-screen bg-[#F2F2F7] flex flex-col pb-8">
@@ -601,18 +641,48 @@ export function AuditDetail() {
 
             {/* File evidences (pdf, audio, video) */}
             {galleryFiles.map((f, i) => (
-              <div
-                key={`file-${i}`}
-                className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1 bg-white border border-[#D1D1D6]"
-                style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
-              >
-                <div className={`w-9 h-9 rounded-[8px] flex items-center justify-center ${
-                  f.kind === "pdf" ? "bg-red-50" : f.kind === "audio" ? "bg-blue-50" : f.kind === "video" ? "bg-purple-50" : "bg-gray-50"
-                }`}>
-                  <EvidenceIcon kind={f.kind} />
+              f.kind === "audio" ? (
+                <div
+                  key={`file-${i}`}
+                  className="col-span-3 rounded-xl bg-white border border-[#D1D1D6] p-3"
+                  style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-9 h-9 rounded-[8px] bg-blue-50 flex items-center justify-center">
+                      <EvidenceIcon kind={f.kind} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[13px] text-[#1C1C1E] truncate">{f.nombre}</p>
+                      <p className="text-[11px] text-[#8E8E93]">Nota de voz</p>
+                    </div>
+                  </div>
+                  {f.src ? (
+                    <audio controls preload="metadata" src={f.src} className="w-full h-10" />
+                  ) : (
+                    <p className="text-[12px] text-[#8E8E93] italic">
+                      Audio no disponible en este dispositivo.
+                    </p>
+                  )}
+                  {f.transcript && (
+                    <p className="text-[12px] text-[#3A3A3C] leading-relaxed mt-2">
+                      {f.transcript}
+                    </p>
+                  )}
                 </div>
-                <span className="text-[10px] text-[#636366] text-center px-1 truncate w-full">{f.nombre}</span>
-              </div>
+              ) : (
+                <div
+                  key={`file-${i}`}
+                  className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1 bg-white border border-[#D1D1D6]"
+                  style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+                >
+                  <div className={`w-9 h-9 rounded-[8px] flex items-center justify-center ${
+                    f.kind === "pdf" ? "bg-red-50" : f.kind === "video" ? "bg-purple-50" : "bg-gray-50"
+                  }`}>
+                    <EvidenceIcon kind={f.kind} />
+                  </div>
+                  <span className="text-[10px] text-[#636366] text-center px-1 truncate w-full">{f.nombre}</span>
+                </div>
+              )
             ))}
           </div>
         </div>

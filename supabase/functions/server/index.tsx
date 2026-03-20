@@ -519,10 +519,18 @@ app.post("/make-server-aac1ff1a/reports", async (c) => {
       if (subscriptions.length > 0) {
         // Create a notification record for deep-link support
         const notifId = crypto.randomUUID();
+        const normalizedDescription = typeof report.descripcion === "string"
+          ? report.descripcion.trim().replace(/\s+/g, " ")
+          : "";
+        const snippet = normalizedDescription.length > 140
+          ? `${normalizedDescription.slice(0, 140).trimEnd()}...`
+          : normalizedDescription;
+        const detailPart = snippet ? `${snippet}. ` : "";
+
         const notifRecord = {
           id: notifId,
           title: `🚨 ${report.tipoEmergencia}`,
-          body: `${report.ubicacion}, ${report.municipio}. Prioridad: ${(report.prioridad || "media").toUpperCase()}. Reportado por: ${report.reportadoPor}`,
+          body: `${report.ubicacion}, ${report.municipio}. ${detailPart}Prioridad: ${(report.prioridad || "media").toUpperCase()}. Reportado por: ${report.reportadoPor}`,
           icon: "/icon.svg",
           tag: `report-${report.id}`,
           createdAt: new Date().toISOString(),
@@ -532,7 +540,7 @@ app.post("/make-server-aac1ff1a/reports", async (c) => {
 
         const payload: PushPayload = {
           title: `🚨 ${report.tipoEmergencia}`,
-          body: `${report.ubicacion}, ${report.municipio}. Prioridad: ${(report.prioridad || "media").toUpperCase()}.`,
+          body: `${report.ubicacion}, ${report.municipio}. ${detailPart}Prioridad: ${(report.prioridad || "media").toUpperCase()}.`,
           icon: "/icon.svg",
           badge: "/icon.svg",
           tag: `report-${report.id}`,

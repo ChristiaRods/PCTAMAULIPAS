@@ -10,6 +10,8 @@ export interface TrazabilidadItem {
   tipo: "Sistema" | "Estatus" | "Actividad" | "Evidencia" | "Ubicacion";
   hora: string;
   mensaje: string;
+  audioSrc?: string;
+  transcript?: string;
 }
 
 export interface Autor {
@@ -36,6 +38,7 @@ export interface Reporte911 {
   coords?: { lat: number; lng: number };
   estatus: string;
   images: string[];
+  evidencias?: EvidenciaMonitoreo[];
   kpis: { personal: number; unidades: number; atencionesPrehosp: number; duracionMin: number };
   conteos: { actualizaciones: number; actividades: number; evidencias: number };
   trazabilidad: TrazabilidadItem[];
@@ -52,6 +55,7 @@ export interface EvidenciaMonitoreo {
   kind: "image" | "pdf" | "audio" | "video";
   nombre: string;
   src: string;
+  transcript?: string;
 }
 
 export interface Monitoreo {
@@ -996,46 +1000,277 @@ export function getFeedItemById(id: string): FeedItem | undefined {
   // First check mock data
   const mock = feedItems.find((item) => item.id === id);
   if (mock) return mock;
+
   // Then check submitted reports from localStorage
   try {
     const raw = localStorage.getItem("pc-tamaulipas-reports");
-    if (raw) {
-      const submitted = JSON.parse(raw) as any[];
-      const found = submitted.find((r: any) => r.id === id);
-      if (found) {
-        // Inline conversion to avoid circular imports
-        const initials = (found.reportadoPor || "PC").split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase();
-        const COLORS = ["bg-red-600","bg-blue-600","bg-emerald-700","bg-amber-700","bg-indigo-600","bg-cyan-600","bg-rose-600","bg-primary"];
-        const cIdx = found.id.split("").reduce((a: number, c: string) => a + c.charCodeAt(0), 0) % COLORS.length;
-        const diffMin = Math.floor((Date.now() - found.sentAt) / 60000);
-        const relTime = diffMin < 1 ? "Hace un momento" : diffMin < 60 ? `Hace ${diffMin} min` : `Hace ${Math.floor(diffMin / 60)} hr`;
-        const statusMap: Record<string, string> = { alta: "En Atención", media: "Registrado", baja: "Registrado" };
-        const images = found.imageDataUrl ? [found.imageDataUrl] : [];
-        const hora = (found.timestamp || "").split(", ")[1] || "00:00";
-        const trazabilidad: TrazabilidadItem[] = [
-          { actor: "Sistema Central", tipo: "Sistema", hora, mensaje: `Reporte de ${(found.tipoEmergencia || "emergencia").toLowerCase()} recibido desde app móvil de Personal de Campo.` },
-          { actor: found.reportadoPor || "Personal de Campo", tipo: "Estatus", hora, mensaje: `Reporte enviado desde campo. Prioridad: ${(found.prioridad || "media").toUpperCase()}.` },
-        ];
-        if (found.imageDataUrl) {
-          trazabilidad.push({ actor: found.reportadoPor || "Personal de Campo", tipo: "Evidencia", hora, mensaje: "Evidencia fotográfica adjunta desde dispositivo móvil." });
-        }
-        return {
-          type: "reporte911", id: found.id, isNew: true,
-          isPinned: found.prioridad === "alta",
-          relativeTime: relTime, timestamp: found.timestamp,
-          autor: { nombre: found.reportadoPor || "Personal de Campo (sin identificar)", iniciales: initials, rol: "Operador de Campo - 911", avatarColor: COLORS[cIdx] },
-          folio: found.folio, titulo: found.tipoEmergencia || "Emergencia General",
-          descripcion: found.descripcion || "Pendiente de captura — Lorem ipsum dolor sit amet.",
-          ubicacion: found.ubicacion || "Ubicación pendiente de registro", municipio: found.municipio || "Ciudad Victoria",
-          coords: found.lat != null && found.lng != null ? { lat: found.lat, lng: found.lng } : undefined,
-          estatus: statusMap[found.prioridad] || "Registrado",
-          images,
-          kpis: { personal: found.prioridad === "alta" ? 4 : 2, unidades: found.prioridad === "alta" ? 2 : 1, atencionesPrehosp: 0, duracionMin: 0 },
-          conteos: { actualizaciones: trazabilidad.length, actividades: 1, evidencias: found.imageDataUrl ? 1 : 0 },
-          trazabilidad,
-        } as Reporte911;
-      }
+    if (!raw) return undefined;
+
+    const submitted = JSON.parse(raw) as unknown;
+    if (!Array.isArray(submitted)) return undefined;
+
+    const found = submitted.find((item) => {
+      if (!item || typeof item !== "object") return false;
+      return (item as { id?: string }).id === id;
+    }) as {
+      id: string;
+      folio?: string;
+      tipoEmergencia?: string;
+      descripcion?: string;
+      ubicacion?: string;
+      municipio?: string;
+      prioridad?: "alta" | "media" | "baja";
+      reportadoPor?: string;
+      imageDataUrl?: string | null;
+      audioNotes?: Array<{
+        id?: string;
+        src?: string;
+        mimeType?: string;
+        transcript?: string;
+        durationSec?: number;
+      }>;
+      audioDataUrl?: string | null;
+      audioTranscript?: string | null;
+      lat?: number | null;
+      lng?: number | null;
+      timestamp?: string;
+      sentAt?: number;
+    } | undefined;
+
+    if (!found) return undefined;
+
+    const IMAGE_LOCAL_ONLY = "[image-local-only]";
+    const AUDIO_LOCAL_ONLY = "[audio-local-only]";
+    const COLORS = [
+      "bg-red-600",
+      "bg-blue-600",
+      "bg-emerald-700",
+      "bg-amber-700",
+      "bg-indigo-600",
+      "bg-cyan-600",
+      "bg-rose-600",
+      "bg-primary",
+    ];
+
+    const normalizeAudioNotes = () => {
+      const normalized = (Array.isArray(found.audioNotes) ? found.audioNotes : [])
+        .map((note, idx) => ({
+          id:
+            typeof note.id === "string" && note.id.trim().length > 0
+              ? note.id
+              : `audio-${idx + 1}`,
+          src: typeof note.src === "string" ? note.src : "",
+          mimeType:
+            typeof note.mimeType === "string" && note.mimeType.trim().length > 0
+              ? note.mimeType
+              : "audio/webm",
+          transcript:
+            typeof note.transcript === "string" ? note.transcript.trim() : "",
+          durationSec:
+            typeof note.durationSec === "number" &&
+            Number.isFinite(note.durationSec)
+              ? Math.max(0, Math.round(note.durationSec))
+              : 0,
+        }))
+        .filter((note) => note.src.length > 0 || note.transcript.length > 0);
+
+      if (normalized.length > 0) return normalized;
+
+      const legacySrc =
+        typeof found.audioDataUrl === "string" ? found.audioDataUrl : "";
+      const legacyTranscript =
+        typeof found.audioTranscript === "string"
+          ? found.audioTranscript.trim()
+          : "";
+
+      if (!legacySrc && !legacyTranscript) return [];
+
+      return [
+        {
+          id: `legacy-${found.id}`,
+          src: legacySrc,
+          mimeType: "audio/webm",
+          transcript: legacyTranscript,
+          durationSec: 0,
+        },
+      ];
+    };
+
+    const getAudioExtension = (mimeType: string) => {
+      if (mimeType.includes("mp4")) return "m4a";
+      if (mimeType.includes("mpeg")) return "mp3";
+      if (mimeType.includes("ogg")) return "ogg";
+      return "webm";
+    };
+
+    const reportadoPor =
+      typeof found.reportadoPor === "string" && found.reportadoPor.trim()
+        ? found.reportadoPor
+        : "Personal de Campo (sin identificar)";
+    const initials = reportadoPor
+      .split(" ")
+      .map((w) => w[0] || "")
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+    const cIdx =
+      found.id
+        .split("")
+        .reduce((a: number, c: string) => a + c.charCodeAt(0), 0) %
+      COLORS.length;
+
+    const sentAt = typeof found.sentAt === "number" ? found.sentAt : Date.now();
+    const diffMin = Math.max(0, Math.floor((Date.now() - sentAt) / 60000));
+    const relTime =
+      diffMin < 1
+        ? "Hace un momento"
+        : diffMin < 60
+          ? `Hace ${diffMin} min`
+          : `Hace ${Math.floor(diffMin / 60)} hr`;
+
+    const prioridad =
+      found.prioridad === "alta" ||
+      found.prioridad === "media" ||
+      found.prioridad === "baja"
+        ? found.prioridad
+        : "media";
+
+    const statusMap: Record<"alta" | "media" | "baja", string> = {
+      alta: "En Atención",
+      media: "Registrado",
+      baja: "Registrado",
+    };
+
+    const images =
+      typeof found.imageDataUrl === "string" &&
+      found.imageDataUrl.length > 0 &&
+      found.imageDataUrl !== IMAGE_LOCAL_ONLY
+        ? [found.imageDataUrl]
+        : [];
+
+    const audioNotes = normalizeAudioNotes();
+    const transcriptLines = audioNotes
+      .map((note) => note.transcript)
+      .filter((text) => text.length > 0);
+
+    const fallbackDescription =
+      transcriptLines.length > 0
+        ? `Notas de voz transcritas:\n${transcriptLines
+            .map((text, idx) => `${idx + 1}. ${text}`)
+            .join("\n")}`
+        : "Pendiente de captura. Información en proceso de actualización por personal en campo.";
+
+    const descripcion =
+      typeof found.descripcion === "string" && found.descripcion.trim().length > 0
+        ? found.descripcion
+        : fallbackDescription;
+
+    const hora =
+      (typeof found.timestamp === "string" ? found.timestamp : "").split(", ")[1] ||
+      "00:00";
+    const safeSummary =
+      descripcion.length > 90 ? `${descripcion.slice(0, 90)}...` : descripcion;
+
+    const trazabilidad: TrazabilidadItem[] = [
+      {
+        actor: "Sistema Central",
+        tipo: "Sistema",
+        hora,
+        mensaje: `Reporte de ${(found.tipoEmergencia || "emergencia").toLowerCase()} recibido desde app móvil de Personal de Campo.`,
+      },
+      {
+        actor: reportadoPor,
+        tipo: "Estatus",
+        hora,
+        mensaje: `Reporte enviado desde campo. Prioridad: ${prioridad.toUpperCase()}. ${safeSummary}`,
+      },
+    ];
+
+    if (images.length > 0) {
+      trazabilidad.push({
+        actor: reportadoPor,
+        tipo: "Evidencia",
+        hora,
+        mensaje: "Evidencia fotográfica adjunta desde dispositivo móvil.",
+      });
     }
-  } catch { /* ignore */ }
+
+    audioNotes.forEach((note, idx) => {
+      const shortTranscript =
+        note.transcript.length > 110
+          ? `${note.transcript.slice(0, 110)}...`
+          : note.transcript;
+      trazabilidad.push({
+        actor: reportadoPor,
+        tipo: "Evidencia",
+        hora,
+        mensaje:
+          shortTranscript.length > 0
+            ? `Nota de voz ${idx + 1}: ${shortTranscript}`
+            : `Nota de voz ${idx + 1} adjunta desde dispositivo móvil.`,
+        transcript: note.transcript || undefined,
+        audioSrc:
+          note.src && note.src !== AUDIO_LOCAL_ONLY ? note.src : undefined,
+      });
+    });
+
+    const audioEvidencias: EvidenciaMonitoreo[] = audioNotes
+      .filter((note) => note.src && note.src !== AUDIO_LOCAL_ONLY)
+      .map((note, idx) => ({
+        kind: "audio",
+        nombre: `nota_voz_${idx + 1}.${getAudioExtension(note.mimeType)}`,
+        src: note.src,
+        transcript: note.transcript || undefined,
+      }));
+
+    const evidenceCount =
+      images.length +
+      audioNotes.filter((note) => note.src.length > 0 || note.transcript.length > 0)
+        .length;
+
+    return {
+      type: "reporte911",
+      id: found.id,
+      isNew: true,
+      isPinned: prioridad === "alta",
+      relativeTime: relTime,
+      timestamp:
+        typeof found.timestamp === "string" && found.timestamp.length > 0
+          ? found.timestamp
+          : new Date().toLocaleString("es-MX"),
+      autor: {
+        nombre: reportadoPor,
+        iniciales: initials || "PC",
+        rol: "Operador de Campo - 911",
+        avatarColor: COLORS[cIdx],
+      },
+      folio: found.folio || found.id,
+      titulo: found.tipoEmergencia || "Emergencia General",
+      descripcion,
+      ubicacion: found.ubicacion || "Ubicación pendiente de registro",
+      municipio: found.municipio || "Ciudad Victoria",
+      coords:
+        typeof found.lat === "number" && typeof found.lng === "number"
+          ? { lat: found.lat, lng: found.lng }
+          : undefined,
+      estatus: statusMap[prioridad],
+      images,
+      evidencias: audioEvidencias,
+      kpis: {
+        personal: prioridad === "alta" ? 4 : prioridad === "media" ? 2 : 1,
+        unidades: prioridad === "alta" ? 2 : 1,
+        atencionesPrehosp: 0,
+        duracionMin: 0,
+      },
+      conteos: {
+        actualizaciones: trazabilidad.length,
+        actividades: 1,
+        evidencias: evidenceCount,
+      },
+      trazabilidad,
+    } as Reporte911;
+  } catch {
+    // ignore malformed local cache
+  }
   return undefined;
 }

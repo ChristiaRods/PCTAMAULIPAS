@@ -439,15 +439,47 @@ const mockNotifications: AppNotification[] = [
 ];
 
 /* ─── Build notifications from submitted reports ─── */
+function makeReportSnippet(
+  report: import("./reportStore").SubmittedReport,
+): string {
+  const clip = (text: string, max = 120) => {
+    const normalized = text.trim().replace(/\s+/g, " ");
+    if (!normalized) return "";
+    return normalized.length > max
+      ? `${normalized.slice(0, max).trimEnd()}...`
+      : normalized;
+  };
+
+  const fromDescription = clip(report.descripcion || "");
+  if (fromDescription) return fromDescription;
+
+  const transcripts =
+    (report.audioNotes || [])
+      .map((note) => (note?.transcript || "").trim())
+      .filter((text) => text.length > 0);
+
+  if (transcripts.length > 0) {
+    return clip(`Notas de voz: ${transcripts.join(" ")}`);
+  }
+
+  if (report.audioTranscript && report.audioTranscript.trim().length > 0) {
+    return clip(`Nota de voz: ${report.audioTranscript}`);
+  }
+
+  return "Sin descripción adicional.";
+}
+
 function buildReportNotifications(reports: import("./reportStore").SubmittedReport[]): AppNotification[] {
   return reports.map((r, i) => {
-    const diffMin = Math.floor((Date.now() - r.sentAt) / 60000);
+    const sentAt = typeof r.sentAt === "number" ? r.sentAt : Date.now();
+    const diffMin = Math.floor((Date.now() - sentAt) / 60000);
     const time = diffMin < 1 ? "Ahora" : diffMin < 60 ? `Hace ${diffMin} min` : `Hace ${Math.floor(diffMin / 60)} hr`;
+    const snippet = makeReportSnippet(r);
     return {
       id: `report-notif-${r.id}`,
       type: "alerta" as const,
       title: `Nuevo reporte: ${r.tipoEmergencia}`,
-      body: `${r.ubicacion}, ${r.municipio}. Prioridad ${r.prioridad}. Enviado por ${r.reportadoPor}.`,
+      body: `${r.ubicacion}, ${r.municipio}. ${snippet} Prioridad ${(r.prioridad || "media").toUpperCase()}. Enviado por ${r.reportadoPor}.`,
       time,
       read: i > 0, // only the newest one is unread
       icon: AlertTriangle,
@@ -1310,4 +1342,3 @@ export function SupervisorNotifications() {
     </div>
   );
 }
-

@@ -49,6 +49,38 @@ import "leaflet/dist/leaflet.css";
 import { PullToRefresh } from "./PullToRefresh";
 import { AudioRecorder911, type AudioValue } from "./AudioRecorder911";
 
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+function buildFinalDescription(
+  manualText: string,
+  audioNotes: AudioValue[],
+): string {
+  const cleanManual = manualText.trim();
+  const transcriptLines = audioNotes.map((note, idx) => {
+    const text = note.transcript.trim();
+    if (text.length > 0) {
+      return `${idx + 1}. ${text}`;
+    }
+    return `${idx + 1}. [Nota de voz sin transcripción disponible]`;
+  });
+
+  if (cleanManual && transcriptLines.length > 0) {
+    return `${cleanManual}\n\nNotas de voz transcritas:\n${transcriptLines.join("\n")}`;
+  }
+  if (cleanManual) return cleanManual;
+  if (transcriptLines.length > 0) {
+    return `Notas de voz transcritas:\n${transcriptLines.join("\n")}`;
+  }
+  return "";
+}
+
 /* ─── Constants ─── */
 const TIPOS_EMERGENCIA = [
   {
@@ -688,7 +720,7 @@ function ReportFormView() {
   const [imageDataUrl, setImageDataUrl] = useState<
     string | null
   >(null);
-  const [audioValue, setAudioValue] = useState<AudioValue | null>(null);
+  const [audioNotes, setAudioNotes] = useState<AudioValue[]>([]);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1170,32 +1202,47 @@ function ReportFormView() {
         codigoPostal,
         referencias,
       });
-      /* ── Convert audio blob to base64 if present ── */
-      let audioDataUrl: string | null = null;
-      if (audioValue?.blob) {
-        try {
-          audioDataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(audioValue.blob);
-          });
-        } catch {
-          console.warn("[Dashboard911] Could not convert audio blob to base64");
-        }
+      const finalDescription = buildFinalDescription(descripcion, audioNotes);
+      if (!finalDescription.trim()) {
+        alert("Agrega texto manual o al menos una nota de voz antes de enviar el reporte.");
+        return;
       }
+
+      /* ── Convert audio notes to base64 (for upload pipeline) ── */
+      const serializedAudioNotes = await Promise.all(
+        audioNotes.map(async (note) => {
+          try {
+            const src = await blobToDataUrl(note.blob);
+            return {
+              id: note.id,
+              src,
+              mimeType: note.mimeType,
+              transcript: note.transcript,
+              durationSec: note.durationSec,
+            };
+          } catch {
+            console.warn("[Dashboard911] Could not convert one audio note to base64");
+            return {
+              id: note.id,
+              src: "",
+              mimeType: note.mimeType,
+              transcript: note.transcript,
+              durationSec: note.durationSec,
+            };
+          }
+        }),
+      );
 
       const report = createReport({
         tipoEmergencia,
         ubicacion:
           composedAddr || "Ubicación pendiente de registro",
         municipio,
-        descripcion,
+        descripcion: finalDescription,
         prioridad,
         reportadoPor,
         imageDataUrl,
-        audioDataUrl,
-        audioTranscript: audioValue?.transcript || null,
+        audioNotes: serializedAudioNotes,
         lat:
           gpsSource === "gps" ||
           gpsSource === "search" ||
@@ -1238,7 +1285,7 @@ function ReportFormView() {
       setPrioridad("media");
       setReportadoPor("");
       setImageDataUrl(null);
-      setAudioValue(null);
+      setAudioNotes([]);
       setLat(null);
       setLng(null);
       setGpsSource(null);
@@ -1265,7 +1312,7 @@ function ReportFormView() {
     prioridad,
     reportadoPor,
     imageDataUrl,
-    audioValue,
+    audioNotes,
     lat,
     lng,
     gpsSource,
@@ -2197,8 +2244,9 @@ function ReportFormView() {
               }}
             />
             <AudioRecorder911
-              value={audioValue}
-              onChange={setAudioValue}
+              values={audioNotes}
+              onChange={setAudioNotes}
+              maxNotes={6}
             />
           </div>
 
