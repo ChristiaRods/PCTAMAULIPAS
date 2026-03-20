@@ -519,18 +519,45 @@ app.post("/make-server-aac1ff1a/reports", async (c) => {
       if (subscriptions.length > 0) {
         // Create a notification record for deep-link support
         const notifId = crypto.randomUUID();
-        const normalizedDescription = typeof report.descripcion === "string"
-          ? report.descripcion.trim().replace(/\s+/g, " ")
-          : "";
-        const snippet = normalizedDescription.length > 140
-          ? `${normalizedDescription.slice(0, 140).trimEnd()}...`
-          : normalizedDescription;
-        const detailPart = snippet ? `${snippet}. ` : "";
+        const clip = (text: string, max = 150) => {
+          const normalized = text.trim().replace(/\s+/g, " ");
+          if (!normalized) return "";
+          return normalized.length > max
+            ? `${normalized.slice(0, max).trimEnd()}...`
+            : normalized;
+        };
+        const transcripts = Array.isArray(report.audioNotes)
+          ? report.audioNotes
+              .map((note: { transcript?: string }) =>
+                typeof note?.transcript === "string" ? note.transcript.trim() : "",
+              )
+              .filter((text: string) => text.length > 0)
+          : [];
+        if (
+          transcripts.length === 0 &&
+          typeof report.audioTranscript === "string" &&
+          report.audioTranscript.trim().length > 0
+        ) {
+          transcripts.push(report.audioTranscript.trim());
+        }
+        const description =
+          typeof report.descripcion === "string" ? report.descripcion.trim() : "";
+        let primaryText = description;
+        if (!primaryText && transcripts.length > 0) {
+          primaryText = transcripts[0];
+        } else if (primaryText.length < 100 && transcripts.length > 0 && !primaryText.includes(transcripts[0])) {
+          primaryText = `${primaryText} ${transcripts[0]}`.trim();
+        }
+        if (primaryText.length < 100 && transcripts.length > 1 && !primaryText.includes(transcripts[1])) {
+          primaryText = `${primaryText} ${transcripts[1]}`.trim();
+        }
+        const snippet = clip(primaryText);
+        const bodyText = snippet || `Nuevo reporte de ${report.tipoEmergencia || "emergencia"}.`;
 
         const notifRecord = {
           id: notifId,
-          title: `🚨 ${report.tipoEmergencia}`,
-          body: `${report.ubicacion}, ${report.municipio}. ${detailPart}Prioridad: ${(report.prioridad || "media").toUpperCase()}. Reportado por: ${report.reportadoPor}`,
+          title: "Protección Civil Tamaulipas",
+          body: bodyText,
           icon: "/icon.svg",
           tag: `report-${report.id}`,
           createdAt: new Date().toISOString(),
@@ -539,8 +566,8 @@ app.post("/make-server-aac1ff1a/reports", async (c) => {
         await kv.set(`push:notif:${notifId}`, notifRecord);
 
         const payload: PushPayload = {
-          title: `🚨 ${report.tipoEmergencia}`,
-          body: `${report.ubicacion}, ${report.municipio}. ${detailPart}Prioridad: ${(report.prioridad || "media").toUpperCase()}.`,
+          title: "Protección Civil Tamaulipas",
+          body: bodyText,
           icon: "/icon.svg",
           badge: "/icon.svg",
           tag: `report-${report.id}`,

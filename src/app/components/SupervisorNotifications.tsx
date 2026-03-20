@@ -450,22 +450,27 @@ function makeReportSnippet(
       : normalized;
   };
 
-  const fromDescription = clip(report.descripcion || "");
-  if (fromDescription) return fromDescription;
-
   const transcripts =
     (report.audioNotes || [])
       .map((note) => (note?.transcript || "").trim())
       .filter((text) => text.length > 0);
 
-  if (transcripts.length > 0) {
-    return clip(`Notas de voz: ${transcripts.join(" ")}`);
+  let primary = (report.descripcion || "").trim();
+  if (!primary && transcripts.length > 0) {
+    primary = transcripts[0];
+  } else if (primary.length < 100 && transcripts.length > 0 && !primary.includes(transcripts[0])) {
+    primary = `${primary} ${transcripts[0]}`.trim();
+  }
+  if (primary.length < 100 && transcripts.length > 1 && !primary.includes(transcripts[1])) {
+    primary = `${primary} ${transcripts[1]}`.trim();
   }
 
-  if (report.audioTranscript && report.audioTranscript.trim().length > 0) {
-    return clip(`Nota de voz: ${report.audioTranscript}`);
+  if (!primary && report.audioTranscript && report.audioTranscript.trim().length > 0) {
+    primary = report.audioTranscript.trim();
   }
 
+  const result = clip(primary);
+  if (result) return result;
   return "Sin descripción adicional.";
 }
 
@@ -1333,12 +1338,21 @@ export function SupervisorNotifications() {
         <ImageLightbox data={lightboxData} onClose={() => setLightboxData(null)} />
       )}
 
-      {/* ═══ Liquid Glass Navigation — SINGLE INSTANCE, NEVER UNMOUNTS ═══ */}
-      <LiquidGlassNav
-        currentView={navView}
-        onChangeView={setNavView}
-        notificationCount={navView === "notificaciones" ? 0 : unreadNotifCount}
-      />
+      {/* ═══ Liquid Glass Navigation — hidden while image lightbox is open ═══ */}
+      <div
+        aria-hidden={Boolean(lightboxData)}
+        style={{
+          opacity: lightboxData ? 0 : 1,
+          pointerEvents: lightboxData ? "none" : "auto",
+          transition: "opacity 160ms ease",
+        }}
+      >
+        <LiquidGlassNav
+          currentView={navView}
+          onChangeView={setNavView}
+          notificationCount={navView === "notificaciones" ? 0 : unreadNotifCount}
+        />
+      </div>
     </div>
   );
 }

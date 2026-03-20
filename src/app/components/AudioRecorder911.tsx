@@ -384,7 +384,7 @@ export function AudioRecorder911({
               </p>
               <p className="text-[12px] text-[#8E8E93]">
                 {isMicSupported
-                  ? "Botón grande para uso en campo · Transcripción automática"
+                  ? "Asegurate de acercarte lo suficiente al microfono para tener una buena transcripción."
                   : "Grabación no disponible en este navegador"}
               </p>
             </div>
@@ -418,7 +418,9 @@ export function AudioRecorder911({
                       className="text-[14px] text-[#1C1C1E]"
                       style={{ fontWeight: 700 }}
                     >
-                      Nota de voz {idx + 1}
+                      {values.length > 1
+                        ? `Descripción del reporte ${idx + 1}`
+                        : "Descripción del reporte"}
                     </p>
                     <p className="text-[12px] text-[#8E8E93]">
                       Duración: {formatTime(note.durationSec)}

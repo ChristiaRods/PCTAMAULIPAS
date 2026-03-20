@@ -63,23 +63,43 @@ function buildFinalDescription(
   audioNotes: AudioValue[],
 ): string {
   const cleanManual = manualText.trim();
-  const transcriptLines = audioNotes.map((note, idx) => {
-    const text = note.transcript.trim();
-    if (text.length > 0) {
-      return `${idx + 1}. ${text}`;
-    }
-    return `${idx + 1}. [Nota de voz sin transcripción disponible]`;
-  });
+  const transcripts = audioNotes
+    .map((note) => note.transcript.trim())
+    .filter((text) => text.length > 0);
 
-  if (cleanManual && transcriptLines.length > 0) {
-    return `${cleanManual}\n\nNotas de voz transcritas:\n${transcriptLines.join("\n")}`;
+  const appendSecondIfShort = (base: string): string => {
+    let result = base.trim();
+    if (result.length < 100 && transcripts.length > 0) {
+      const first = transcripts[0];
+      if (first && !result.includes(first)) {
+        result = `${result} ${first}`.trim();
+      }
+    }
+    if (result.length < 100 && transcripts.length > 1) {
+      const second = transcripts[1];
+      if (second && !result.includes(second)) {
+        result = `${result} ${second}`.trim();
+      }
+    }
+    return result;
+  };
+
+  if (cleanManual) {
+    return appendSecondIfShort(cleanManual);
   }
-  if (cleanManual) return cleanManual;
-  if (transcriptLines.length > 0) {
-    return `Notas de voz transcritas:\n${transcriptLines.join("\n")}`;
+
+  if (transcripts.length > 0) {
+    return appendSecondIfShort(transcripts[0]);
   }
+
+  if (audioNotes.length > 0) {
+    return "Nota de voz enviada por personal de campo.";
+  }
+
   return "";
 }
+
+const MAX_REPORT_IMAGES = 5;
 
 /* ─── Constants ─── */
 const TIPOS_EMERGENCIA = [
@@ -717,9 +737,7 @@ function ReportFormView() {
     "alta" | "media" | "baja"
   >("media");
   const [reportadoPor, setReportadoPor] = useState("");
-  const [imageDataUrl, setImageDataUrl] = useState<
-    string | null
-  >(null);
+  const [imageDataUrls, setImageDataUrls] = useState<string[]>([]);
   const [audioNotes, setAudioNotes] = useState<AudioValue[]>([]);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -1165,25 +1183,42 @@ function ReportFormView() {
 
   const handleImageSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      // Limpiamos el input inmediatamente para que pueda re-seleccionarse
+      const files = Array.from(e.target.files || []);
       e.target.value = "";
-      if (!file) return;
+      if (files.length === 0) return;
+
+      const availableSlots = Math.max(0, MAX_REPORT_IMAGES - imageDataUrls.length);
+      if (availableSlots <= 0) {
+        alert(`Puedes adjuntar hasta ${MAX_REPORT_IMAGES} fotografías por reporte.`);
+        return;
+      }
+
+      const selected = files.slice(0, availableSlots);
+      if (files.length > availableSlots) {
+        alert(`Solo se agregarán ${availableSlots} fotografías (máximo ${MAX_REPORT_IMAGES}).`);
+      }
 
       setCompressingImage(true);
       try {
-        // compressImage: 4032×3024 px iPhone → 1280 px max, JPEG 0.80 → ~250 KB
-        const compressed = await compressImage(file);
-        setImageDataUrl(compressed);
+        const compressedImages: string[] = [];
+        for (const file of selected) {
+          const compressed = await compressImage(file);
+          compressedImages.push(compressed);
+        }
+        setImageDataUrls((prev) => [...prev, ...compressedImages].slice(0, MAX_REPORT_IMAGES));
       } catch (err) {
         console.error("[Dashboard911] compressImage failed:", err);
-        alert("No se pudo procesar la imagen. Intenta con otra foto.");
+        alert("No se pudo procesar una o más imágenes. Intenta nuevamente.");
       } finally {
         setCompressingImage(false);
       }
     },
-    [],
+    [imageDataUrls.length],
   );
+
+  const removeImageAt = useCallback((index: number) => {
+    setImageDataUrls((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   /* Submit */
   const handleSubmit = useCallback(async () => {
@@ -1241,7 +1276,7 @@ function ReportFormView() {
         descripcion: finalDescription,
         prioridad,
         reportadoPor,
-        imageDataUrl,
+        imageDataUrls,
         audioNotes: serializedAudioNotes,
         lat:
           gpsSource === "gps" ||
@@ -1284,7 +1319,7 @@ function ReportFormView() {
       setDescripcion("");
       setPrioridad("media");
       setReportadoPor("");
-      setImageDataUrl(null);
+      setImageDataUrls([]);
       setAudioNotes([]);
       setLat(null);
       setLng(null);
@@ -1311,7 +1346,7 @@ function ReportFormView() {
     descripcion,
     prioridad,
     reportadoPor,
-    imageDataUrl,
+    imageDataUrls,
     audioNotes,
     lat,
     lng,
@@ -2296,8 +2331,9 @@ function ReportFormView() {
               onChange={handleImageSelect}
               className="hidden"
               accept="image/*"
+              multiple
             />
-            {!imageDataUrl ? (
+            {imageDataUrls.length === 0 ? (
               <button
                 onClick={() => !compressingImage && fileInputRef.current?.click()}
                 disabled={compressingImage}
@@ -2325,36 +2361,46 @@ function ReportFormView() {
                 className="rounded-xl overflow-hidden border border-[#E5E5EA]"
                 style={{ background: "#F9F9FB" }}
               >
-                <img
-                  src={imageDataUrl}
-                  alt="Preview"
-                  className="w-full h-40 object-cover"
-                />
-                <div className="flex items-center justify-between px-3 py-2">
+                <div className="grid grid-cols-2 gap-2 p-2.5">
+                  {imageDataUrls.map((src, idx) => (
+                    <div
+                      key={`photo-${idx}`}
+                      className="relative rounded-lg overflow-hidden border border-[#E5E5EA]"
+                    >
+                      <img
+                        src={src}
+                        alt={`Preview ${idx + 1}`}
+                        className="w-full h-28 object-cover"
+                      />
+                      <button
+                        onClick={() => removeImageAt(idx)}
+                        className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-1 rounded-md active:opacity-60"
+                        style={{ background: "rgba(0,0,0,0.55)" }}
+                        aria-label={`Quitar imagen ${idx + 1}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-white" strokeWidth={1.8} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between px-3 pb-3 pt-1">
                   <span className="flex items-center gap-1.5 text-[13px] text-[#636366]">
-                    <ImageIcon
-                      className="w-4 h-4"
-                      strokeWidth={1.8}
-                    />{" "}
-                    Imagen adjunta
+                    <ImageIcon className="w-4 h-4" strokeWidth={1.8} />
+                    {imageDataUrls.length} / {MAX_REPORT_IMAGES} imágenes
                   </span>
                   <button
-                    onClick={() => setImageDataUrl(null)}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg active:opacity-60"
+                    onClick={() => !compressingImage && fileInputRef.current?.click()}
+                    disabled={compressingImage || imageDataUrls.length >= MAX_REPORT_IMAGES}
+                    className="px-2.5 py-1.5 rounded-lg text-[12px] active:opacity-60 transition-opacity disabled:opacity-40"
                     style={{
-                      background: "rgba(220,38,38,0.08)",
+                      background: "rgba(171,23,56,0.08)",
+                      color: "#AB1738",
+                      fontWeight: 700,
                     }}
                   >
-                    <Trash2
-                      className="w-3.5 h-3.5 text-[#DC2626]"
-                      strokeWidth={1.8}
-                    />
-                    <span
-                      className="text-[12px] text-[#DC2626]"
-                      style={{ fontWeight: 600 }}
-                    >
-                      Quitar
-                    </span>
+                    {imageDataUrls.length >= MAX_REPORT_IMAGES
+                      ? "Límite alcanzado"
+                      : "Agregar más"}
                   </button>
                 </div>
               </div>
@@ -2475,6 +2521,10 @@ function ReportFormView() {
                   : r.prioridad === "media"
                     ? "#F59E0B"
                     : "#059669";
+              const firstHistoryImage =
+                (Array.isArray((r as { imageDataUrls?: string[] }).imageDataUrls)
+                  ? (r as { imageDataUrls?: string[] }).imageDataUrls?.[0]
+                  : undefined) || r.imageDataUrl || null;
               return (
                 <div
                   key={`${r.id}-${idx}`}
@@ -2486,9 +2536,9 @@ function ReportFormView() {
                   }}
                 >
                   <div className="flex items-start gap-3">
-                    {r.imageDataUrl ? (
+                    {firstHistoryImage ? (
                       <img
-                        src={r.imageDataUrl}
+                        src={firstHistoryImage}
                         alt=""
                         className="w-12 h-12 rounded-lg object-cover shrink-0"
                         style={{ border: "1px solid #E5E5EA" }}

@@ -22,7 +22,9 @@ export interface SubmittedReport {
   descripcion: string;
   prioridad: "alta" | "media" | "baja";
   reportadoPor: string;
-  imageDataUrl: string | null;
+  imageDataUrls: string[];
+  // Legacy field kept for backward compatibility with older cached reports.
+  imageDataUrl?: string | null;
   audioNotes?: SubmittedAudioNote[];
   // Legacy fields kept for backward compatibility with older cached reports.
   audioDataUrl?: string | null;
@@ -95,15 +97,27 @@ function ensureAudioNotes(report: SubmittedReport): SubmittedAudioNote[] {
   ];
 }
 
+function normalizeImageDataUrls(report: SubmittedReport): string[] {
+  const fromArray = Array.isArray(report.imageDataUrls)
+    ? report.imageDataUrls.filter((url) => typeof url === "string" && url.trim().length > 0)
+    : [];
+  if (fromArray.length > 0) return fromArray;
+
+  const legacy = typeof report.imageDataUrl === "string" ? report.imageDataUrl : "";
+  return legacy ? [legacy] : [];
+}
+
 function normalizeReport(report: SubmittedReport): SubmittedReport {
   const normalizedNotes = ensureAudioNotes(report);
+  const normalizedImages = normalizeImageDataUrls(report);
   const firstTranscript =
     normalizedNotes.map((n) => n.transcript.trim()).find((text) => text.length > 0) || null;
   const firstAudioSrc = normalizedNotes.find((n) => n.src)?.src || null;
 
   return {
     ...report,
-    imageDataUrl: typeof report.imageDataUrl === "string" ? report.imageDataUrl : null,
+    imageDataUrls: normalizedImages,
+    imageDataUrl: normalizedImages[0] || null,
     audioNotes: normalizedNotes,
     audioDataUrl:
       typeof report.audioDataUrl === "string"
@@ -120,6 +134,7 @@ function stripHeavyMedia(report: SubmittedReport): SubmittedReport {
   const normalized = normalizeReport(report);
   return {
     ...normalized,
+    imageDataUrls: [],
     imageDataUrl: null,
     audioNotes: normalized.audioNotes?.map((note) => ({ ...note, src: "" })) || [],
     audioDataUrl: null,
@@ -162,16 +177,17 @@ function mergeServerWithLocal(
   const serverNormalized = normalizeReport(serverReport);
   const localNormalized = normalizeReport(localReport);
 
-  const serverHasImage =
-    !!serverNormalized.imageDataUrl && serverNormalized.imageDataUrl !== IMAGE_LOCAL_ONLY;
-  const localHasImage =
-    !!localNormalized.imageDataUrl && localNormalized.imageDataUrl !== IMAGE_LOCAL_ONLY;
-
-  const imageDataUrl = serverHasImage
-    ? serverNormalized.imageDataUrl
-    : localHasImage
-      ? localNormalized.imageDataUrl
-      : serverNormalized.imageDataUrl;
+  const serverImages = serverNormalized.imageDataUrls.filter(
+    (url) => !!url && url !== IMAGE_LOCAL_ONLY,
+  );
+  const localImages = localNormalized.imageDataUrls.filter(
+    (url) => !!url && url !== IMAGE_LOCAL_ONLY,
+  );
+  const imageDataUrls = serverImages.length > 0
+    ? serverNormalized.imageDataUrls
+    : localImages.length > 0
+      ? localNormalized.imageDataUrls
+      : serverNormalized.imageDataUrls;
 
   const mergedAudioNotes = mergeAudioNotesPreferLocal(
     ensureAudioNotes(serverNormalized),
@@ -180,7 +196,8 @@ function mergeServerWithLocal(
 
   return normalizeReport({
     ...serverNormalized,
-    imageDataUrl,
+    imageDataUrls,
+    imageDataUrl: imageDataUrls[0] || null,
     audioNotes: mergedAudioNotes,
     audioDataUrl: serverNormalized.audioDataUrl || localNormalized.audioDataUrl || null,
     audioTranscript: serverNormalized.audioTranscript || localNormalized.audioTranscript || null,
@@ -290,10 +307,17 @@ export async function saveReport(
 ): Promise<{ success: boolean; push?: { sent: number; total: number } }> {
   const reportToSave = normalizeReport(report);
 
-  if (reportToSave.imageDataUrl && reportToSave.imageDataUrl.startsWith("data:")) {
-    const uploadedUrl = await uploadEvidenceDataUrl(reportToSave.imageDataUrl, "reports");
-    if (uploadedUrl) reportToSave.imageDataUrl = uploadedUrl;
+  const uploadedImages: string[] = [];
+  for (const imageSrc of reportToSave.imageDataUrls) {
+    let src = imageSrc;
+    if (src && src.startsWith("data:")) {
+      const uploadedUrl = await uploadEvidenceDataUrl(src, "reports");
+      if (uploadedUrl) src = uploadedUrl;
+    }
+    uploadedImages.push(src);
   }
+  reportToSave.imageDataUrls = uploadedImages;
+  reportToSave.imageDataUrl = uploadedImages[0] || null;
 
   const uploadedAudioNotes: SubmittedAudioNote[] = [];
   for (const note of ensureAudioNotes(reportToSave)) {
@@ -322,13 +346,13 @@ export async function saveReport(
 
   try {
     const serverReport: SubmittedReport = normalizeReport({ ...reportToSave });
-    if (
-      serverReport.imageDataUrl &&
-      serverReport.imageDataUrl.startsWith("data:") &&
-      serverReport.imageDataUrl.length > 200_000
-    ) {
-      serverReport.imageDataUrl = IMAGE_LOCAL_ONLY;
-    }
+    serverReport.imageDataUrls = serverReport.imageDataUrls.map((src) => {
+      if (src && src.startsWith("data:")) {
+        return IMAGE_LOCAL_ONLY;
+      }
+      return src;
+    });
+    serverReport.imageDataUrl = serverReport.imageDataUrls[0] || null;
 
     serverReport.audioNotes = ensureAudioNotes(serverReport).map((note) => {
       if (note.src && note.src.startsWith("data:")) {
@@ -402,7 +426,8 @@ export function createReport(data: {
   descripcion: string;
   prioridad: "alta" | "media" | "baja";
   reportadoPor: string;
-  imageDataUrl: string | null;
+  imageDataUrls: string[];
+  imageDataUrl?: string | null;
   audioNotes?: SubmittedAudioNote[];
   audioDataUrl?: string | null;
   audioTranscript?: string | null;
@@ -421,6 +446,8 @@ export function createReport(data: {
   const audioNotes = normalizeAudioNotes(data.audioNotes);
   const firstTranscript = audioNotes.map((n) => n.transcript.trim()).find((text) => text.length > 0) || null;
   const firstAudioSrc = audioNotes.find((n) => n.src)?.src || null;
+  const imageDataUrls = (Array.isArray(data.imageDataUrls) ? data.imageDataUrls : [])
+    .filter((url) => typeof url === "string" && url.trim().length > 0);
 
   return {
     id: folio,
@@ -433,7 +460,8 @@ export function createReport(data: {
       "Pendiente de captura. Informacion en proceso de actualizacion por personal en campo.",
     prioridad: data.prioridad,
     reportadoPor: data.reportadoPor || "Personal de Campo (sin identificar)",
-    imageDataUrl: data.imageDataUrl,
+    imageDataUrls,
+    imageDataUrl: imageDataUrls[0] || data.imageDataUrl || null,
     audioNotes,
     audioDataUrl: data.audioDataUrl ?? firstAudioSrc,
     audioTranscript: data.audioTranscript ?? firstTranscript,
@@ -462,9 +490,42 @@ function getAudioExtension(mimeType: string): string {
   return "webm";
 }
 
+function composePrimaryReportText(
+  rawDescription: string,
+  audioNotes: SubmittedAudioNote[],
+): string {
+  const description = rawDescription.trim();
+  const transcripts = audioNotes
+    .map((note) => note.transcript.trim())
+    .filter((text) => text.length > 0);
+
+  const appendByRule = (base: string): string => {
+    let result = base.trim();
+    if (result.length < 100 && transcripts.length > 0 && !result.includes(transcripts[0])) {
+      result = `${result} ${transcripts[0]}`.trim();
+    }
+    if (result.length < 100 && transcripts.length > 1 && !result.includes(transcripts[1])) {
+      result = `${result} ${transcripts[1]}`.trim();
+    }
+    return result;
+  };
+
+  if (description.length > 0) {
+    return appendByRule(description);
+  }
+  if (transcripts.length > 0) {
+    return appendByRule(transcripts[0]);
+  }
+  return "Pendiente de captura. Informacion en proceso de actualizacion por personal en campo.";
+}
+
 /* Convert SubmittedReport -> FeedItem (Reporte911) */
 export function toFeedItem(report: SubmittedReport): Reporte911 {
   const normalized = normalizeReport(report);
+  const audioNotes = ensureAudioNotes(normalized).filter(
+    (note) => note.src.length > 0 || note.transcript.trim().length > 0,
+  );
+  const primaryDescription = composePrimaryReportText(normalized.descripcion || "", audioNotes);
 
   const initials = normalized.reportadoPor
     .split(" ")
@@ -494,13 +555,12 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
     baja: "Registrado",
   };
 
-  const images: string[] =
-    normalized.imageDataUrl && normalized.imageDataUrl !== IMAGE_LOCAL_ONLY
-      ? [normalized.imageDataUrl]
-      : [];
+  const images: string[] = normalized.imageDataUrls.filter(
+    (src) => src && src !== IMAGE_LOCAL_ONLY,
+  );
 
   const hora = normalized.timestamp.split(", ")[1] || "00:00";
-  const safeDescription = (normalized.descripcion || "").trim();
+  const safeDescription = primaryDescription;
   const summaryForThread = safeDescription.length > 80
     ? `${safeDescription.slice(0, 80)}...`
     : safeDescription;
@@ -528,10 +588,6 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
       mensaje: "Evidencia fotografica adjunta desde dispositivo movil.",
     });
   }
-
-  const audioNotes = ensureAudioNotes(normalized).filter(
-    (note) => note.src.length > 0 || note.transcript.trim().length > 0,
-  );
 
   audioNotes.forEach((note, idx) => {
     const transcript = note.transcript.trim();
@@ -586,7 +642,7 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
     },
     folio: normalized.folio,
     titulo: normalized.tipoEmergencia,
-    descripcion: normalized.descripcion,
+    descripcion: primaryDescription,
     ubicacion: normalized.ubicacion,
     municipio: normalized.municipio,
     coords:

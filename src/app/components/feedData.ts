@@ -1021,6 +1021,7 @@ export function getFeedItemById(id: string): FeedItem | undefined {
       municipio?: string;
       prioridad?: "alta" | "media" | "baja";
       reportadoPor?: string;
+      imageDataUrls?: string[];
       imageDataUrl?: string | null;
       audioNotes?: Array<{
         id?: string;
@@ -1141,29 +1142,41 @@ export function getFeedItemById(id: string): FeedItem | undefined {
       baja: "Registrado",
     };
 
-    const images =
+    const images = (Array.isArray(found.imageDataUrls) ? found.imageDataUrls : [])
+      .filter((url) => typeof url === "string" && url.length > 0 && url !== IMAGE_LOCAL_ONLY);
+    if (
+      images.length === 0 &&
       typeof found.imageDataUrl === "string" &&
       found.imageDataUrl.length > 0 &&
       found.imageDataUrl !== IMAGE_LOCAL_ONLY
-        ? [found.imageDataUrl]
-        : [];
+    ) {
+      images.push(found.imageDataUrl);
+    }
 
     const audioNotes = normalizeAudioNotes();
     const transcriptLines = audioNotes
       .map((note) => note.transcript)
       .filter((text) => text.length > 0);
 
-    const fallbackDescription =
-      transcriptLines.length > 0
-        ? `Notas de voz transcritas:\n${transcriptLines
-            .map((text, idx) => `${idx + 1}. ${text}`)
-            .join("\n")}`
-        : "Pendiente de captura. Información en proceso de actualización por personal en campo.";
+    const composeByRule = (base: string) => {
+      let result = base.trim();
+      if (result.length < 100 && transcriptLines.length > 0 && !result.includes(transcriptLines[0])) {
+        result = `${result} ${transcriptLines[0]}`.trim();
+      }
+      if (result.length < 100 && transcriptLines.length > 1 && !result.includes(transcriptLines[1])) {
+        result = `${result} ${transcriptLines[1]}`.trim();
+      }
+      return result;
+    };
 
-    const descripcion =
-      typeof found.descripcion === "string" && found.descripcion.trim().length > 0
-        ? found.descripcion
-        : fallbackDescription;
+    const rawDescription =
+      typeof found.descripcion === "string" ? found.descripcion.trim() : "";
+
+    const descripcion = rawDescription.length > 0
+      ? composeByRule(rawDescription)
+      : transcriptLines.length > 0
+        ? composeByRule(transcriptLines[0])
+        : "Pendiente de captura. Información en proceso de actualización por personal en campo.";
 
     const hora =
       (typeof found.timestamp === "string" ? found.timestamp : "").split(", ")[1] ||
