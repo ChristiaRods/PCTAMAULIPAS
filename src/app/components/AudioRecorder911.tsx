@@ -87,6 +87,8 @@ export function AudioRecorder911({
   const [liveTranscript, setLiveTranscript] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+  const [micPermission, setMicPermission] = useState<"unknown" | "granted" | "denied">("unknown");
 
   /* ─── Refs ─── */
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -108,6 +110,70 @@ export function AudioRecorder911({
   const isSpeechRecognitionSupported = Boolean(getSR());
 
   const canAddMore = values.length < maxNotes;
+  const hasMicPermission = micPermission === "granted";
+
+  const releaseStream = useCallback(() => {
+    if (!streamRef.current) return;
+    streamRef.current.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+  }, []);
+
+  const requestMicPermission = useCallback(async () => {
+    if (!isMicSupported || isRequestingPermission) return false;
+    setIsRequestingPermission(true);
+    try {
+      const testStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      testStream.getTracks().forEach((track) => track.stop());
+      setMicPermission("granted");
+      return true;
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        setMicPermission("denied");
+        alert(
+          "Necesitamos permiso de micrófono para grabar notas de voz. Puedes activarlo en Configuración del navegador.",
+        );
+      } else {
+        alert("No se pudo activar el micrófono. Inténtalo de nuevo.");
+      }
+      return false;
+    } finally {
+      setIsRequestingPermission(false);
+    }
+  }, [isMicSupported, isRequestingPermission]);
+
+  useEffect(() => {
+    if (!isMicSupported) return;
+    if (!("permissions" in navigator) || !navigator.permissions?.query) return;
+    let disposed = false;
+    let permissionStatus: PermissionStatus | null = null;
+
+    const syncPermission = (state: PermissionState) => {
+      if (disposed) return;
+      if (state === "granted") setMicPermission("granted");
+      else if (state === "denied") setMicPermission("denied");
+      else setMicPermission((prev) => (prev === "granted" ? "granted" : "unknown"));
+    };
+
+    navigator.permissions
+      .query({ name: "microphone" as PermissionName })
+      .then((status) => {
+        if (disposed) return;
+        permissionStatus = status;
+        syncPermission(status.state);
+        status.onchange = () => syncPermission(status.state);
+      })
+      .catch(() => {
+        // Some browsers do not expose microphone permission state.
+      });
+
+    return () => {
+      disposed = true;
+      if (permissionStatus) permissionStatus.onchange = null;
+    };
+  }, [isMicSupported]);
 
   /* ─── Object URLs cleanup ─── */
   useEffect(() => {
@@ -154,15 +220,13 @@ export function AudioRecorder911({
       if (mediaRecorderRef.current?.state === "recording") {
         mediaRecorderRef.current.stop();
       }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-      }
+      releaseStream();
       for (const id of Object.keys(audioUrlsRef.current)) {
         URL.revokeObjectURL(audioUrlsRef.current[id]);
       }
       audioUrlsRef.current = {};
     };
-  }, []);
+  }, [releaseStream]);
 
   /* ─── Stop recording ─── */
   const stopRecording = useCallback(() => {
@@ -187,17 +251,23 @@ export function AudioRecorder911({
       mediaRecorderRef.current.state !== "inactive"
     ) {
       mediaRecorderRef.current.stop();
+    } else {
+      releaseStream();
     }
     setIsRecording(false);
     setInterimText("");
     setLiveTranscript("");
-  }, []);
+  }, [releaseStream]);
 
   /* ─── Start recording ─── */
   const startRecording = useCallback(async () => {
     if (!isMicSupported) {
       alert("Tu navegador no soporta grabación de audio.");
       return;
+    }
+    if (!hasMicPermission) {
+      const granted = await requestMicPermission();
+      if (!granted) return;
     }
     if (!canAddMore) return;
 
@@ -210,23 +280,11 @@ export function AudioRecorder911({
       setElapsed(0);
       audioChunksRef.current = [];
 
-      let stream = streamRef.current;
-      const needsFreshStream =
-        !stream ||
-        stream
-          .getAudioTracks()
-          .every((track) => track.readyState === "ended");
-
-      if (needsFreshStream) {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true },
-        });
-        streamRef.current = stream;
-      } else {
-        stream.getAudioTracks().forEach((track) => {
-          track.enabled = true;
-        });
-      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      streamRef.current = stream;
+      setMicPermission("granted");
 
       const selectedMimeType = selectRecorderMimeType();
       let recorder: MediaRecorder;
@@ -246,11 +304,7 @@ export function AudioRecorder911({
 
       recorder.onstop = () => {
         shouldRestartRecognitionRef.current = false;
-        if (streamRef.current) {
-          streamRef.current.getAudioTracks().forEach((track) => {
-            track.enabled = false;
-          });
-        }
+        releaseStream();
         const blob = new Blob(audioChunksRef.current, { type: mimeType });
         if (blob.size === 0) {
           alert(
@@ -361,8 +415,10 @@ export function AudioRecorder911({
       }
     } catch (err: unknown) {
       isPressingRef.current = false;
+      releaseStream();
       const name = err instanceof Error ? err.name : "";
       if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        setMicPermission("denied");
         alert(
           "Permiso de micrófono denegado. Ve a Configuración > Safari/Chrome para habilitarlo.",
         );
@@ -370,18 +426,45 @@ export function AudioRecorder911({
         alert("No se pudo acceder al micrófono. Verifica los permisos.");
       }
     }
-  }, [canAddMore, isMicSupported, onChange, stopRecording, values]);
+  }, [
+    canAddMore,
+    hasMicPermission,
+    isMicSupported,
+    onChange,
+    releaseStream,
+    requestMicPermission,
+    stopRecording,
+    values,
+  ]);
 
   const startPressRecording = useCallback(
     (event: PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
-      if (!isMicSupported || !canAddMore || isRecording || isPressingRef.current) {
+      if (
+        !isMicSupported ||
+        !canAddMore ||
+        isRecording ||
+        isPressingRef.current ||
+        isRequestingPermission
+      ) {
+        return;
+      }
+      if (!hasMicPermission) {
+        void requestMicPermission();
         return;
       }
       isPressingRef.current = true;
       void startRecording();
     },
-    [canAddMore, isMicSupported, isRecording, startRecording],
+    [
+      canAddMore,
+      hasMicPermission,
+      isMicSupported,
+      isRecording,
+      isRequestingPermission,
+      requestMicPermission,
+      startRecording,
+    ],
   );
 
   const stopPressRecording = useCallback(() => {
@@ -406,6 +489,26 @@ export function AudioRecorder911({
     };
   }, [stopPressRecording]);
 
+  useEffect(() => {
+    const forceStop = () => {
+      if (!isRecording && !isPressingRef.current) return;
+      isPressingRef.current = false;
+      stopRecording();
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") forceStop();
+    };
+
+    window.addEventListener("blur", forceStop);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.removeEventListener("blur", forceStop);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [isRecording, stopRecording]);
+
   const deleteNote = useCallback(
     (id: string) => {
       const confirmed = window.confirm(
@@ -419,6 +522,17 @@ export function AudioRecorder911({
 
   const displayTranscript = liveTranscript + interimText;
   const hasLiveTranscript = displayTranscript.trim().length > 0;
+  const holdToRecordEnabled =
+    isMicSupported && canAddMore && hasMicPermission && !isRequestingPermission;
+  const buttonAriaLabel = !isMicSupported
+    ? "Grabacion no disponible"
+    : !canAddMore
+      ? "Limite de notas alcanzado"
+      : !hasMicPermission
+        ? "Activar microfono"
+        : isRecording
+          ? "Suelta para detener grabacion"
+          : "Manten presionado para grabar";
 
   return (
     <div className="mt-2 space-y-2.5">
@@ -458,13 +572,18 @@ export function AudioRecorder911({
           onPointerUp={stopPressRecording}
           onPointerCancel={stopPressRecording}
           onPointerLeave={isRecording ? stopPressRecording : undefined}
-          disabled={!isMicSupported || !canAddMore}
-          className="w-full flex items-center gap-3 px-3 py-3 transition-all active:scale-[0.99]"
+          onContextMenu={(event) => event.preventDefault()}
+          onDragStart={(event) => event.preventDefault()}
+          disabled={!isMicSupported || !canAddMore || isRequestingPermission}
+          className="w-full flex items-center gap-3 px-3 py-3 transition-all active:scale-[0.99] select-none"
           style={{
-            opacity: !isMicSupported || !canAddMore ? 0.55 : 1,
+            opacity: !isMicSupported || !canAddMore || isRequestingPermission ? 0.55 : 1,
             touchAction: "none",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            WebkitTouchCallout: "none",
           }}
-          aria-label={isRecording ? "Suelta para detener grabacion" : "Manten presionado para grabar"}
+          aria-label={buttonAriaLabel}
         >
           <div
             className="w-12 h-12 rounded-full flex items-center justify-center shrink-0"
@@ -494,11 +613,19 @@ export function AudioRecorder911({
                 ? `Limite alcanzado (${maxNotes})`
                 : isRecording
                   ? `Grabando... ${formatTime(elapsed)}`
-                  : "Manten presionado para grabar"}
+                  : isRequestingPermission
+                    ? "Activando micrófono..."
+                    : holdToRecordEnabled
+                      ? "Mantén presionado para grabar"
+                      : "Activar micrófono"}
             </p>
             <p className="text-[12px] text-[#8E8E93]">
               {!isMicSupported
                 ? "Grabacion no disponible en este navegador"
+                : isRequestingPermission
+                  ? "Confirma el permiso en pantalla para continuar."
+                  : !hasMicPermission
+                    ? "Primero activa el micrófono. Después usa mantener presionado para grabar."
                 : isRecording
                   ? "Suelta para guardar la nota."
                   : isSpeechRecognitionSupported
