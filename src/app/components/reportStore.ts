@@ -11,6 +11,9 @@ export interface SubmittedAudioNote {
   mimeType: string;
   transcript: string;
   durationSec: number;
+  transcriptionStatus?: "pending" | "processing" | "done" | "error";
+  transcriptionError?: string | null;
+  transcribedAt?: string | null;
 }
 
 export interface SubmittedReport {
@@ -64,15 +67,36 @@ function normalizeAudioNotes(raw: unknown): SubmittedAudioNote[] {
   return raw
     .map((item, idx) => {
       const note = (item || {}) as Partial<SubmittedAudioNote>;
+      const transcript = typeof note.transcript === "string" ? note.transcript : "";
+      const normalizedSrc = typeof note.src === "string" ? note.src : "";
+      const statusFromPayload =
+        note.transcriptionStatus === "pending" ||
+        note.transcriptionStatus === "processing" ||
+        note.transcriptionStatus === "done" ||
+        note.transcriptionStatus === "error"
+          ? note.transcriptionStatus
+          : undefined;
+      const transcriptionStatus =
+        statusFromPayload ||
+        (transcript.trim().length > 0
+          ? "done"
+          : normalizedSrc.length > 0
+            ? "pending"
+            : "error");
       return {
         id: typeof note.id === "string" && note.id.trim().length > 0 ? note.id : `audio-${idx + 1}`,
-        src: typeof note.src === "string" ? note.src : "",
+        src: normalizedSrc,
         mimeType: typeof note.mimeType === "string" && note.mimeType ? note.mimeType : "audio/webm",
-        transcript: typeof note.transcript === "string" ? note.transcript : "",
+        transcript,
         durationSec:
           typeof note.durationSec === "number" && Number.isFinite(note.durationSec)
             ? Math.max(0, Math.round(note.durationSec))
             : 0,
+        transcriptionStatus,
+        transcriptionError:
+          typeof note.transcriptionError === "string" ? note.transcriptionError : null,
+        transcribedAt:
+          typeof note.transcribedAt === "string" ? note.transcribedAt : null,
       };
     })
     .filter((note) => note.src.length > 0 || note.transcript.trim().length > 0);
@@ -93,6 +117,9 @@ function ensureAudioNotes(report: SubmittedReport): SubmittedAudioNote[] {
       mimeType: "audio/webm",
       transcript: legacyTranscript,
       durationSec: 0,
+      transcriptionStatus: legacyTranscript.trim().length > 0 ? "done" : "pending",
+      transcriptionError: null,
+      transcribedAt: null,
     },
   ];
 }
@@ -156,6 +183,20 @@ function mergeAudioNotesPreferLocal(
       mimeType: serverNote.mimeType || localNote?.mimeType || "audio/webm",
       durationSec: serverNote.durationSec || localNote?.durationSec || 0,
       transcript: serverNote.transcript || localNote?.transcript || "",
+      transcriptionStatus:
+        serverNote.transcriptionStatus ||
+        localNote?.transcriptionStatus ||
+        ((serverNote.transcript || localNote?.transcript || "").trim().length > 0
+          ? "done"
+          : "pending"),
+      transcriptionError:
+        serverNote.transcriptionError ??
+        localNote?.transcriptionError ??
+        null,
+      transcribedAt:
+        serverNote.transcribedAt ??
+        localNote?.transcribedAt ??
+        null,
     };
   });
 
@@ -356,6 +397,16 @@ export async function saveReport(
     uploadedAudioNotes.push({
       ...note,
       src,
+      transcriptionStatus:
+        note.transcript.trim().length > 0
+          ? "done"
+          : src.length > 0
+            ? note.transcriptionStatus || "pending"
+            : "error",
+      transcriptionError:
+        src.length > 0
+          ? note.transcriptionError ?? null
+          : note.transcriptionError || "audio-upload-failed",
     });
   }
   reportToSave.audioNotes = uploadedAudioNotes;

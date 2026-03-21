@@ -97,3 +97,57 @@ La app consume los endpoints bajo:
 4. Adjuntar evidencia en reporte/monitoreo y confirmar que queda en URL de Storage.
 5. Suscribir push y enviar notificación de prueba.
 6. Abrir notificación y validar deep-link a Alertas.
+
+## Transcripcion Asincrona (Whisper-compatible)
+
+Esta fase evita depender de transcripcion nativa del navegador (que en iOS PWA puede ser inconsistente).
+
+1. Configura secretos del worker en Supabase:
+
+```bash
+supabase secrets set TRANSCRIPTION_WORKER_SECRET=<TU_SECRET_LARGO>
+supabase secrets set TRANSCRIPTION_MAX_ATTEMPTS=3
+supabase secrets set TRANSCRIPTION_RETRY_STALE_MS=300000
+```
+
+2. Vuelve a desplegar la funcion:
+
+```bash
+supabase functions deploy server
+```
+
+3. Levanta tu servicio Whisper-compatible (ejemplo local en `http://127.0.0.1:8080`).
+
+4. Crea `.env.worker` tomando como base:
+
+- `scripts/transcription-worker.env.example`
+
+Ejemplo (PowerShell):
+
+```bash
+copy scripts\transcription-worker.env.example .env.worker
+```
+
+Dentro de `.env.worker`, define tambien:
+
+- `SUPABASE_ANON_KEY=<TU_ANON_KEY_REAL>`
+- `TRANSCRIPTION_WORKER_SECRET=<EL_MISMO_SECRET_QUE_SUBISTE_A_SUPABASE>`
+
+5. Ejecuta el worker:
+
+```bash
+npm run transcription:worker
+```
+
+6. Flujo esperado:
+
+- Al enviar reporte con audio sin transcripcion, el backend crea jobs `pending`.
+- El worker toma jobs (`claim`), transcribe y responde `complete`.
+- El reporte se actualiza con `audioNotes[].transcript` y estado `done`.
+
+7. Endpoints utiles de diagnostico:
+
+- `POST /transcription/jobs/claim` (worker)
+- `POST /transcription/jobs/:jobId/complete` (worker)
+- `POST /transcription/jobs/:jobId/error` (worker)
+- `GET /transcription/jobs/report/:reportId` (debug)

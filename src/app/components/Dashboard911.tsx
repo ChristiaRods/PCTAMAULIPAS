@@ -1254,6 +1254,11 @@ function ReportFormView() {
               mimeType: note.mimeType,
               transcript: note.transcript,
               durationSec: note.durationSec,
+              transcriptionStatus:
+                note.transcriptionStatus ||
+                (note.transcript.trim().length > 0 ? "done" : "pending"),
+              transcriptionError: note.transcriptionError ?? null,
+              transcribedAt: note.transcribedAt ?? null,
             };
           } catch {
             console.warn("[Dashboard911] Could not convert one audio note to base64");
@@ -1263,6 +1268,9 @@ function ReportFormView() {
               mimeType: note.mimeType,
               transcript: note.transcript,
               durationSec: note.durationSec,
+              transcriptionStatus: "error",
+              transcriptionError: "audio-conversion-failed",
+              transcribedAt: null,
             };
           }
         }),

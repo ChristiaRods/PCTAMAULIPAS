@@ -11,6 +11,9 @@ export interface AudioValue {
   mimeType: string;
   transcript: string;
   durationSec: number;
+  transcriptionStatus?: "pending" | "processing" | "done" | "error";
+  transcriptionError?: string | null;
+  transcribedAt?: string | null;
 }
 
 interface Props {
@@ -266,6 +269,10 @@ export function AudioRecorder911({
           mimeType,
           transcript,
           durationSec,
+          transcriptionStatus:
+            transcript.trim().length > 0 ? "done" : "pending",
+          transcriptionError: null,
+          transcribedAt: transcript.trim().length > 0 ? new Date().toISOString() : null,
         };
         onChange([...values, newNote]);
       };
@@ -629,6 +636,17 @@ export function AudioRecorder911({
                     >
                       {note.transcript}
                     </p>
+                  ) : note.transcriptionStatus === "pending" ||
+                    note.transcriptionStatus === "processing" ? (
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle
+                        className="w-3.5 h-3.5 text-[#A16207] shrink-0 mt-0.5"
+                        strokeWidth={2}
+                      />
+                      <p className="text-[12px] text-[#8E8E93] italic">
+                        Transcripcion en proceso. El audio ya quedo guardado.
+                      </p>
+                    </div>
                   ) : (
                     <div className="flex items-start gap-2">
                       <AlertTriangle
@@ -636,7 +654,7 @@ export function AudioRecorder911({
                         strokeWidth={2}
                       />
                       <p className="text-[12px] text-[#8E8E93] italic">
-                        Sin transcripción. El audio se enviará igualmente.
+                        Sin transcripcion. El audio se enviara igualmente.
                       </p>
                     </div>
                   )}
@@ -649,4 +667,5 @@ export function AudioRecorder911({
     </div>
   );
 }
+
 

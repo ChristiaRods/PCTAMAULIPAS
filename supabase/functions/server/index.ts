@@ -40,7 +40,7 @@ app.use(
   "/*",
   cors({
     origin: "*",
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "x-transcription-secret"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     exposeHeaders: ["Content-Length"],
     maxAge: 600,
@@ -511,24 +511,294 @@ routeGet("/push/notifications", async (c) => {
    REPORTS 911 â€” Server-synced reports across devices
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
+
+type TranscriptionStatus = "pending" | "processing" | "done" | "error";
+type TranscriptionJobStatus = "pending" | "processing" | "done" | "error";
+
+type ReportAudioNote = {
+  id: string;
+  src: string;
+  mimeType: string;
+  transcript: string;
+  durationSec: number;
+  transcriptionStatus: TranscriptionStatus;
+  transcriptionError: string | null;
+  transcribedAt: string | null;
+};
+
+type TranscriptionJob = {
+  id: string;
+  reportId: string;
+  noteId: string;
+  audioUrl: string;
+  language: string;
+  status: TranscriptionJobStatus;
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
+  processingStartedAt?: string;
+  completedAt?: string;
+  workerId?: string;
+  provider?: string;
+  model?: string;
+  transcript?: string;
+  lastError?: string | null;
+  reportFolio?: string;
+};
+
+const TRANSCRIPTION_WORKER_SECRET =
+  Deno.env.get("TRANSCRIPTION_WORKER_SECRET")?.trim() || "";
+const TRANSCRIPTION_MAX_ATTEMPTS = Math.max(
+  1,
+  Number(Deno.env.get("TRANSCRIPTION_MAX_ATTEMPTS") || "3"),
+);
+const TRANSCRIPTION_RETRY_STALE_MS = Math.max(
+  30000,
+  Number(Deno.env.get("TRANSCRIPTION_RETRY_STALE_MS") || "300000"),
+);
+
+function parseTranscriptionStatus(value: unknown): TranscriptionStatus | null {
+  return value === "pending" ||
+    value === "processing" ||
+    value === "done" ||
+    value === "error"
+    ? value
+    : null;
+}
+
+function normalizeReportAudioNotes(rawReport: Record<string, unknown>): ReportAudioNote[] {
+  const rawNotes = Array.isArray(rawReport.audioNotes) ? rawReport.audioNotes : [];
+  return rawNotes.map((item, idx) => {
+    const note = (item || {}) as Record<string, unknown>;
+    const transcript = typeof note.transcript === "string" ? note.transcript.trim() : "";
+    const src = typeof note.src === "string" ? note.src : "";
+    const statusFromPayload = parseTranscriptionStatus(note.transcriptionStatus);
+    const transcriptionStatus: TranscriptionStatus = statusFromPayload ||
+      (transcript.length > 0 ? "done" : src.length > 0 ? "pending" : "error");
+    const nowIso = new Date().toISOString();
+    return {
+      id: typeof note.id === "string" && note.id.trim().length > 0
+        ? note.id.trim()
+        : `audio-${idx + 1}`,
+      src,
+      mimeType: typeof note.mimeType === "string" && note.mimeType.trim().length > 0
+        ? note.mimeType.trim()
+        : "audio/webm",
+      transcript,
+      durationSec: typeof note.durationSec === "number" && Number.isFinite(note.durationSec)
+        ? Math.max(0, Math.round(note.durationSec))
+        : 0,
+      transcriptionStatus,
+      transcriptionError: typeof note.transcriptionError === "string"
+        ? note.transcriptionError
+        : null,
+      transcribedAt: typeof note.transcribedAt === "string"
+        ? note.transcribedAt
+        : transcript.length > 0
+        ? nowIso
+        : null,
+    };
+  }).filter((note) => note.src.length > 0 || note.transcript.length > 0);
+}
+
+function firstTranscriptFromNotes(notes: ReportAudioNote[]): string | null {
+  for (const note of notes) {
+    if (note.transcript.trim().length > 0) return note.transcript.trim();
+  }
+  return null;
+}
+
+function toSafeJobId(reportId: string, noteId: string): string {
+  const sanitize = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `${sanitize(reportId)}__${sanitize(noteId)}`;
+}
+
+async function updateReportAudioNote(
+  reportId: string,
+  noteId: string,
+  patch: Partial<ReportAudioNote>,
+): Promise<boolean> {
+  const reportKey = `report:${reportId}`;
+  const report = await kv.get(reportKey) as Record<string, unknown> | null;
+  if (!report) return false;
+
+  const notes = normalizeReportAudioNotes(report);
+  let changed = false;
+  const updatedNotes = notes.map((note) => {
+    if (note.id !== noteId) return note;
+    changed = true;
+    const next: ReportAudioNote = {
+      ...note,
+      ...patch,
+      transcript: typeof patch.transcript === "string" ? patch.transcript : note.transcript,
+      transcriptionStatus: parseTranscriptionStatus(patch.transcriptionStatus) || note.transcriptionStatus,
+      transcriptionError:
+        typeof patch.transcriptionError === "string" || patch.transcriptionError === null
+          ? patch.transcriptionError
+          : note.transcriptionError,
+      transcribedAt:
+        typeof patch.transcribedAt === "string" || patch.transcribedAt === null
+          ? patch.transcribedAt
+          : note.transcribedAt,
+    };
+    if (next.transcript.trim().length > 0) {
+      next.transcriptionStatus = "done";
+      next.transcriptionError = null;
+      if (!next.transcribedAt) next.transcribedAt = new Date().toISOString();
+    }
+    return next;
+  });
+
+  if (!changed) return false;
+  const audioTranscript =
+    typeof report.audioTranscript === "string" && report.audioTranscript.trim().length > 0
+      ? report.audioTranscript
+      : firstTranscriptFromNotes(updatedNotes);
+
+  await kv.set(reportKey, {
+    ...report,
+    audioNotes: updatedNotes,
+    audioTranscript: audioTranscript || null,
+    updatedAt: new Date().toISOString(),
+  });
+
+  return true;
+}
+
+async function queueTranscriptionJobsForReport(report: Record<string, unknown> & { id: string }) {
+  const notes = normalizeReportAudioNotes(report);
+  let queued = 0;
+  const jobIds: string[] = [];
+  const now = new Date().toISOString();
+  let notesChanged = false;
+
+  for (const note of notes) {
+    if (!note.src) {
+      if (note.transcriptionStatus !== "error") {
+        note.transcriptionStatus = "error";
+        note.transcriptionError = note.transcriptionError || "missing-audio-src";
+        notesChanged = true;
+      }
+      continue;
+    }
+
+    if (note.transcript.trim().length > 0) {
+      if (note.transcriptionStatus !== "done") {
+        note.transcriptionStatus = "done";
+        note.transcriptionError = null;
+        note.transcribedAt = note.transcribedAt || now;
+        notesChanged = true;
+      }
+      continue;
+    }
+
+    const jobId = toSafeJobId(report.id, note.id);
+    const jobKey = `transcription:job:${jobId}`;
+    const existing = await kv.get(jobKey) as TranscriptionJob | null;
+
+    if (existing?.status === "processing") {
+      note.transcriptionStatus = "processing";
+      note.transcriptionError = null;
+      continue;
+    }
+
+    if (existing?.status === "done" && existing.transcript && existing.transcript.trim().length > 0) {
+      note.transcript = existing.transcript.trim();
+      note.transcriptionStatus = "done";
+      note.transcribedAt = existing.completedAt || now;
+      note.transcriptionError = null;
+      notesChanged = true;
+      continue;
+    }
+
+    const nextAttempts = typeof existing?.attempts === "number" ? existing.attempts : 0;
+    const job: TranscriptionJob = {
+      id: jobId,
+      reportId: report.id,
+      noteId: note.id,
+      audioUrl: note.src,
+      language: "es",
+      status: "pending",
+      attempts: nextAttempts,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+      reportFolio: typeof report.folio === "string" ? report.folio : undefined,
+      lastError: null,
+    };
+    await kv.set(jobKey, job);
+    queued += 1;
+    jobIds.push(jobId);
+    if (note.transcriptionStatus !== "pending" || note.transcriptionError) {
+      note.transcriptionStatus = "pending";
+      note.transcriptionError = null;
+      notesChanged = true;
+    }
+  }
+
+  if (notesChanged) {
+    const reportKey = `report:${report.id}`;
+    const latest = await kv.get(reportKey) as Record<string, unknown> | null;
+    if (latest) {
+      await kv.set(reportKey, {
+        ...latest,
+        audioNotes: notes,
+        audioTranscript:
+          (typeof latest.audioTranscript === "string" && latest.audioTranscript.trim().length > 0)
+            ? latest.audioTranscript
+            : firstTranscriptFromNotes(notes),
+        updatedAt: now,
+      });
+    }
+  }
+
+  return {
+    queued,
+    jobIds,
+    pending: notes.filter((n) => n.transcriptionStatus === "pending" || n.transcriptionStatus === "processing").length,
+  };
+}
+
+function getTranscriptionToken(c: any): string {
+  const headerToken = c.req.header("x-transcription-secret");
+  if (headerToken && headerToken.trim().length > 0) return headerToken.trim();
+
+  const auth = c.req.header("authorization") || "";
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || "";
+}
+
+function isTranscriptionAuthorized(c: any): boolean {
+  if (!TRANSCRIPTION_WORKER_SECRET) return false;
+  return getTranscriptionToken(c) === TRANSCRIPTION_WORKER_SECRET;
+}
 /** POST /reports â€” Save a report and optionally send push to all devices */
 routePost("/reports", async (c) => {
   try {
     const body = await c.req.json();
-    const report = body.report;
+    const report = body.report as Record<string, unknown>;
 
     if (!report || !report.id) {
       return c.json({ error: "Missing report or report.id" }, 400);
     }
 
+    const normalizedAudioNotes = normalizeReportAudioNotes(report);
+    const providedTranscript =
+      typeof report.audioTranscript === "string" ? report.audioTranscript.trim() : "";
+    const resolvedAudioTranscript =
+      providedTranscript || firstTranscriptFromNotes(normalizedAudioNotes) || null;
+
     // Store report in KV with prefix
-    const kvKey = `report:${report.id}`;
+    const kvKey = `report:${String(report.id)}`;
     const record = {
       ...report,
+      id: String(report.id),
+      audioNotes: normalizedAudioNotes,
+      audioTranscript: resolvedAudioTranscript,
       serverReceivedAt: new Date().toISOString(),
     };
     await kv.set(kvKey, record);
-    console.log(`Report saved: ${kvKey} (${report.tipoEmergencia} - ${report.municipio})`);
+    const transcription = await queueTranscriptionJobsForReport(record);
+    console.log(`Report saved: ${kvKey} (${record.tipoEmergencia} - ${record.municipio})`);
 
     // Send push notification to all subscribed devices about the new report
     let pushResult = { sent: 0, failed: 0, total: 0 };
@@ -546,8 +816,8 @@ routePost("/reports", async (c) => {
             ? `${normalized.slice(0, max).trimEnd()}...`
             : normalized;
         };
-        const transcripts = Array.isArray(report.audioNotes)
-          ? report.audioNotes
+        const transcripts = Array.isArray(record.audioNotes)
+          ? record.audioNotes
               .map((note: { transcript?: string }) =>
                 typeof note?.transcript === "string" ? note.transcript.trim() : "",
               )
@@ -555,13 +825,13 @@ routePost("/reports", async (c) => {
           : [];
         if (
           transcripts.length === 0 &&
-          typeof report.audioTranscript === "string" &&
-          report.audioTranscript.trim().length > 0
+          typeof record.audioTranscript === "string" &&
+          record.audioTranscript.trim().length > 0
         ) {
-          transcripts.push(report.audioTranscript.trim());
+          transcripts.push(record.audioTranscript.trim());
         }
         const description =
-          typeof report.descripcion === "string" ? report.descripcion.trim() : "";
+          typeof record.descripcion === "string" ? record.descripcion.trim() : "";
         let primaryText = description;
         if (!primaryText && transcripts.length > 0) {
           primaryText = transcripts[0];
@@ -572,16 +842,16 @@ routePost("/reports", async (c) => {
           primaryText = `${primaryText} ${transcripts[1]}`.trim();
         }
         const snippet = clip(primaryText);
-        const bodyText = snippet || `Nuevo reporte de ${report.tipoEmergencia || "emergencia"}.`;
+        const bodyText = snippet || `Nuevo reporte de ${record.tipoEmergencia || "emergencia"}.`;
 
         const notifRecord = {
           id: notifId,
           title: "ProtecciÃ³n Civil Tamaulipas",
           body: bodyText,
           icon: "/icon.svg",
-          tag: `report-${report.id}`,
+          tag: `report-${record.id}`,
           createdAt: new Date().toISOString(),
-          linkedReportId: report.id,
+          linkedReportId: record.id,
         };
         await kv.set(`push:notif:${notifId}`, notifRecord);
 
@@ -590,9 +860,9 @@ routePost("/reports", async (c) => {
           body: bodyText,
           icon: "/icon.svg",
           badge: "/icon.svg",
-          tag: `report-${report.id}`,
+          tag: `report-${record.id}`,
           url: `/?notification=${notifId}`,
-          data: { notificationId: notifId, reportId: report.id },
+          data: { notificationId: notifId, reportId: record.id },
         };
 
         console.log(`Sending report push to ${subscriptions.length} subscriber(s)...`);
@@ -629,8 +899,9 @@ routePost("/reports", async (c) => {
 
     return c.json({
       success: true,
-      reportId: report.id,
+      reportId: record.id,
       push: pushResult,
+      transcription,
     });
   } catch (err) {
     const msg = `Error saving report: ${err instanceof Error ? err.message : String(err)}`;
@@ -662,6 +933,12 @@ routeDelete("/reports/:id", async (c) => {
       return c.json({ error: "Missing report ID" }, 400);
     }
     await kv.del(`report:${id}`);
+    const jobs = (await kv.getByPrefix("transcription:job:")) as TranscriptionJob[];
+    for (const job of jobs) {
+      if (job?.reportId === id && job?.id) {
+        await kv.del(`transcription:job:${job.id}`);
+      }
+    }
     console.log(`Report deleted: report:${id}`);
     return c.json({ success: true });
   } catch (err) {
@@ -675,6 +952,172 @@ routeDelete("/reports/:id", async (c) => {
    MONITORING â€” Server-synced monitoring entries across devices
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
+
+/** POST /transcription/jobs/claim - Worker claims next pending transcription job */
+routePost("/transcription/jobs/claim", async (c) => {
+  try {
+    if (!TRANSCRIPTION_WORKER_SECRET) {
+      return c.json({ error: "Transcription worker secret is not configured" }, 503);
+    }
+    if (!isTranscriptionAuthorized(c)) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+    const workerId = typeof body.workerId === "string" ? body.workerId : "worker";
+
+    const jobs = (await kv.getByPrefix("transcription:job:")) as TranscriptionJob[];
+    const nowMs = Date.now();
+    const candidates = jobs
+      .filter((job) => {
+        if (!job || !job.id || !job.reportId || !job.noteId || !job.audioUrl) return false;
+        if (job.status === "pending") return (job.attempts || 0) < TRANSCRIPTION_MAX_ATTEMPTS;
+        if (job.status !== "processing") return false;
+        const started = Date.parse(job.processingStartedAt || job.updatedAt || "");
+        if (!Number.isFinite(started)) return true;
+        return (nowMs - started) >= TRANSCRIPTION_RETRY_STALE_MS;
+      })
+      .sort((a, b) => Date.parse(a.createdAt || "") - Date.parse(b.createdAt || ""));
+
+    if (candidates.length === 0) {
+      return c.json({ job: null });
+    }
+
+    const selected = candidates[0];
+    const now = new Date().toISOString();
+    const claimed: TranscriptionJob = {
+      ...selected,
+      status: "processing",
+      attempts: (selected.attempts || 0) + 1,
+      workerId,
+      processingStartedAt: now,
+      updatedAt: now,
+      lastError: null,
+    };
+    await kv.set(`transcription:job:${claimed.id}`, claimed);
+    await updateReportAudioNote(claimed.reportId, claimed.noteId, {
+      transcriptionStatus: "processing",
+      transcriptionError: null,
+    });
+
+    return c.json({ job: claimed });
+  } catch (err) {
+    const msg = `Error claiming transcription job: ${err instanceof Error ? err.message : String(err)}`;
+    console.log(msg);
+    return c.json({ error: msg }, 500);
+  }
+});
+
+/** POST /transcription/jobs/:jobId/complete - Worker submits transcript */
+routePost("/transcription/jobs/:jobId/complete", async (c) => {
+  try {
+    if (!TRANSCRIPTION_WORKER_SECRET) {
+      return c.json({ error: "Transcription worker secret is not configured" }, 503);
+    }
+    if (!isTranscriptionAuthorized(c)) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const jobId = c.req.param("jobId");
+    if (!jobId) return c.json({ error: "Missing jobId" }, 400);
+
+    const body = await c.req.json();
+    const transcript = typeof body.transcript === "string" ? body.transcript.trim() : "";
+    if (!transcript) return c.json({ error: "Missing transcript" }, 400);
+
+    const jobKey = `transcription:job:${jobId}`;
+    const job = await kv.get(jobKey) as TranscriptionJob | null;
+    if (!job) return c.json({ error: "Job not found" }, 404);
+
+    const now = new Date().toISOString();
+    const doneJob: TranscriptionJob = {
+      ...job,
+      transcript,
+      status: "done",
+      completedAt: now,
+      updatedAt: now,
+      lastError: null,
+      provider: typeof body.provider === "string" ? body.provider : job.provider,
+      model: typeof body.model === "string" ? body.model : job.model,
+    };
+    await kv.set(jobKey, doneJob);
+    const reportUpdated = await updateReportAudioNote(doneJob.reportId, doneJob.noteId, {
+      transcript,
+      transcriptionStatus: "done",
+      transcriptionError: null,
+      transcribedAt: now,
+    });
+
+    return c.json({ success: true, reportUpdated, job: doneJob });
+  } catch (err) {
+    const msg = `Error completing transcription job: ${err instanceof Error ? err.message : String(err)}`;
+    console.log(msg);
+    return c.json({ error: msg }, 500);
+  }
+});
+
+/** POST /transcription/jobs/:jobId/error - Worker reports transcription error */
+routePost("/transcription/jobs/:jobId/error", async (c) => {
+  try {
+    if (!TRANSCRIPTION_WORKER_SECRET) {
+      return c.json({ error: "Transcription worker secret is not configured" }, 503);
+    }
+    if (!isTranscriptionAuthorized(c)) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const jobId = c.req.param("jobId");
+    if (!jobId) return c.json({ error: "Missing jobId" }, 400);
+
+    const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+    const errorText = typeof body.error === "string" && body.error.trim().length > 0
+      ? body.error.trim()
+      : "transcription-failed";
+    const retryable = body.retryable !== false;
+
+    const jobKey = `transcription:job:${jobId}`;
+    const job = await kv.get(jobKey) as TranscriptionJob | null;
+    if (!job) return c.json({ error: "Job not found" }, 404);
+
+    const canRetry = retryable && (job.attempts || 0) < TRANSCRIPTION_MAX_ATTEMPTS;
+    const now = new Date().toISOString();
+    const status: TranscriptionJobStatus = canRetry ? "pending" : "error";
+    const nextJob: TranscriptionJob = {
+      ...job,
+      status,
+      updatedAt: now,
+      lastError: errorText,
+    };
+    await kv.set(jobKey, nextJob);
+    await updateReportAudioNote(nextJob.reportId, nextJob.noteId, {
+      transcriptionStatus: status,
+      transcriptionError: status === "error" ? errorText : null,
+    });
+
+    return c.json({ success: true, status, job: nextJob });
+  } catch (err) {
+    const msg = `Error updating transcription job failure: ${err instanceof Error ? err.message : String(err)}`;
+    console.log(msg);
+    return c.json({ error: msg }, 500);
+  }
+});
+
+/** GET /transcription/jobs/report/:reportId - Debug list of transcription jobs by report */
+routeGet("/transcription/jobs/report/:reportId", async (c) => {
+  try {
+    const reportId = c.req.param("reportId");
+    if (!reportId) return c.json({ error: "Missing reportId" }, 400);
+    const jobs = (await kv.getByPrefix("transcription:job:")) as TranscriptionJob[];
+    const filtered = jobs
+      .filter((job) => job?.reportId === reportId)
+      .sort((a, b) => Date.parse(a.createdAt || "") - Date.parse(b.createdAt || ""));
+    return c.json({ jobs: filtered });
+  } catch (err) {
+    const msg = `Error listing report transcription jobs: ${err instanceof Error ? err.message : String(err)}`;
+    console.log(msg);
+    return c.json({ error: msg }, 500);
+  }
+});
 /** POST /monitoring â€” Save a monitoring entry */
 routePost("/monitoring", async (c) => {
   try {
@@ -871,3 +1314,5 @@ routePost("/settings/name/:roleId", async (c) => {
 });
 
 Deno.serve(app.fetch);
+
+
