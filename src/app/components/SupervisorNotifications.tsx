@@ -1339,20 +1339,13 @@ export function SupervisorNotifications() {
       )}
 
       {/* ═══ Liquid Glass Navigation — hidden while image lightbox is open ═══ */}
-      <div
-        aria-hidden={Boolean(lightboxData)}
-        style={{
-          opacity: lightboxData ? 0 : 1,
-          pointerEvents: lightboxData ? "none" : "auto",
-          transition: "opacity 160ms ease",
-        }}
-      >
+      {!lightboxData && (
         <LiquidGlassNav
           currentView={navView}
           onChangeView={setNavView}
           notificationCount={navView === "notificaciones" ? 0 : unreadNotifCount}
         />
-      </div>
+      )}
     </div>
   );
 }

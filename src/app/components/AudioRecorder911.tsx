@@ -609,35 +609,49 @@ export function AudioRecorder911({
         {values.length === 0 ? (
           <p className="text-[12px] text-[#8E8E93]">Aún no hay notas guardadas.</p>
         ) : (
-          values.map((note, idx) => (
-            <div
-              key={note.id}
-              className="rounded-lg border px-2.5 py-2"
-              style={{ borderColor: "#ECECEF", background: "#FCFCFD" }}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[13px] text-[#1C1C1E]" style={{ fontWeight: 700 }}>
-                  {values.length > 1 ? `Descripción del reporte ${idx + 1}` : "Descripción del reporte"}
+          values.map((note, idx) => {
+            const audioUrl = audioUrls[note.id];
+            return (
+              <div
+                key={note.id}
+                className="rounded-lg border px-2.5 py-2"
+                style={{ borderColor: "#ECECEF", background: "#FCFCFD" }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[13px] text-[#1C1C1E]" style={{ fontWeight: 700 }}>
+                    {values.length > 1 ? `Descripción del reporte ${idx + 1}` : "Descripción del reporte"}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => deleteNote(note.id)}
+                    className="text-[12px] text-[#DC2626] px-2 py-1 rounded-md"
+                    style={{ background: "rgba(220,38,38,0.08)", fontWeight: 700 }}
+                  >
+                    Eliminar
+                  </button>
+                </div>
+
+                <p className="text-[12px] text-[#8E8E93] mt-1">Duración: {formatTime(note.durationSec)}</p>
+
+                {audioUrl && (
+                  <audio
+                    controls
+                    preload="metadata"
+                    src={audioUrl}
+                    className="w-full h-9 mt-2"
+                  />
+                )}
+
+                <p className="text-[12px] text-[#3A3A3C] mt-1.5 whitespace-pre-wrap break-words">
+                  {note.transcript?.trim()
+                    ? note.transcript.trim()
+                    : note.transcriptionStatus === "pending" || note.transcriptionStatus === "processing"
+                      ? "Audio guardado. Transcripción en proceso."
+                      : "Audio guardado sin transcripción."}
                 </p>
-                <button
-                  type="button"
-                  onClick={() => deleteNote(note.id)}
-                  className="text-[12px] text-[#DC2626] px-2 py-1 rounded-md"
-                  style={{ background: "rgba(220,38,38,0.08)", fontWeight: 700 }}
-                >
-                  Eliminar
-                </button>
               </div>
-              <p className="text-[12px] text-[#8E8E93] mt-1">Duración: {formatTime(note.durationSec)}</p>
-              <p className="text-[12px] text-[#3A3A3C] mt-1.5 line-clamp-2">
-                {note.transcript?.trim()
-                  ? note.transcript.trim()
-                  : note.transcriptionStatus === "pending" || note.transcriptionStatus === "processing"
-                    ? "Audio guardado. Transcripción en proceso."
-                    : "Audio guardado sin transcripción."}
-              </p>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
