@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, type PointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { Mic, Square, Trash2, AlertTriangle } from "lucide-react";
 
 const GUINDO = "#AB1738";
@@ -70,6 +71,24 @@ function selectRecorderMimeType(): string | null {
   return null;
 }
 
+function mergeTranscriptPreview(finalText: string, interimText: string): string {
+  const finalClean = finalText.trim();
+  const interimClean = interimText.trim();
+
+  if (!finalClean) return interimClean;
+  if (!interimClean) return finalClean;
+
+  const finalNorm = finalClean.toLowerCase();
+  const interimNorm = interimClean.toLowerCase();
+
+  if (interimNorm.includes(finalNorm)) return interimClean;
+  if (finalNorm.includes(interimNorm)) return finalClean;
+  if (interimNorm.startsWith(finalNorm)) return interimClean;
+  if (finalNorm.endsWith(interimNorm)) return finalClean;
+
+  return `${finalClean} ${interimClean}`.trim();
+}
+
 export function AudioRecorder911({
   values,
   onChange,
@@ -91,6 +110,7 @@ export function AudioRecorder911({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
   const transcriptRef = useRef<string>("");
+  const lastFinalSegmentRef = useRef<string>("");
   const interimRef = useRef<string>("");
   const shouldRestartRecognitionRef = useRef<boolean>(false);
   const isPressingRef = useRef<boolean>(false);
@@ -268,6 +288,7 @@ export function AudioRecorder911({
 
     try {
       transcriptRef.current = "";
+      lastFinalSegmentRef.current = "";
       interimRef.current = "";
       shouldRestartRecognitionRef.current = true;
       setLiveTranscript("");
@@ -347,7 +368,11 @@ export function AudioRecorder911({
           for (let i = event.resultIndex; i < event.results.length; i++) {
             const result = event.results[i];
             if (result.isFinal) {
-              transcriptRef.current += result[0].transcript + " ";
+              const finalSegment = result[0].transcript.trim();
+              if (finalSegment && finalSegment !== lastFinalSegmentRef.current) {
+                transcriptRef.current = `${transcriptRef.current} ${finalSegment}`.trim();
+                lastFinalSegmentRef.current = finalSegment;
+              }
             } else {
               interim += result[0].transcript;
             }
@@ -515,9 +540,7 @@ export function AudioRecorder911({
     [onChange, values],
   );
 
-  const displayTranscript = `${liveTranscript}${interimText}`.trim();
-  const holdToRecordEnabled =
-    isMicSupported && canAddMore && hasMicPermission && !isRequestingPermission;
+  const displayTranscript = mergeTranscriptPreview(liveTranscript, interimText);
   const statusCopy = !isMicSupported
     ? "Grabacion no disponible en este navegador"
     : isRequestingPermission
@@ -555,184 +578,188 @@ export function AudioRecorder911({
         </p>
       )}
 
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[120]" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-[4px]" />
+      {isModalOpen && typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[2147483000]" role="dialog" aria-modal="true">
+            <div className="absolute inset-0 bg-black/72 backdrop-blur-[4px]" />
 
-          <div className="absolute inset-0 flex flex-col" style={{ userSelect: "none", WebkitUserSelect: "none" }}>
-            <div className="flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top)+10px)]">
-              <p className="text-white text-[14px]" style={{ fontWeight: 700 }}>
-                Evidencias por voz
-              </p>
-              <button
-                onClick={closeComposer}
-                type="button"
-                className="px-3 py-1.5 rounded-full text-[13px] text-white"
-                style={{
-                  background: "rgba(255,255,255,0.12)",
-                  border: "1px solid rgba(255,255,255,0.28)",
-                  backdropFilter: "blur(12px)",
-                }}
-              >
-                Cerrar
-              </button>
-            </div>
-
-            <div className="px-5 pt-4">
-              <div className="min-h-[112px]">
-                <p className="text-white text-[30px] leading-[1.12]" style={{ fontWeight: 800 }}>
-                  {displayTranscript ||
-                    (isRecording
-                      ? "Escuchando tu dictado..."
-                      : "Manten presionado el boton central para dictar evidencias")}
+            <div className="absolute inset-0 flex flex-col" style={{ userSelect: "none", WebkitUserSelect: "none" }}>
+              <div className="flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top)+10px)]">
+                <p className="text-white text-[14px]" style={{ fontWeight: 700 }}>
+                  Evidencias por voz
                 </p>
-              </div>
-            </div>
-
-            <div className="relative flex-1">
-              <div className="absolute left-1/2 top-[44%] -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
                 <button
+                  onClick={closeComposer}
                   type="button"
-                  onPointerDown={startPressRecording}
-                  onPointerUp={stopPressRecording}
-                  onPointerCancel={stopPressRecording}
-                  onContextMenu={(event) => event.preventDefault()}
-                  onDragStart={(event) => event.preventDefault()}
-                  disabled={!isMicSupported || !canAddMore || isRequestingPermission}
-                  className="pointer-events-auto rounded-full flex items-center justify-center shadow-2xl"
+                  className="px-3 py-1.5 rounded-full text-[13px] text-white"
                   style={{
-                    width: 110,
-                    height: 110,
-                    border: "1px solid rgba(255,255,255,0.45)",
-                    background:
-                      isRecording || isRecordButtonPressed
-                        ? `linear-gradient(150deg, ${GUINDO_DARK}, ${GUINDO})`
-                        : `linear-gradient(150deg, ${GUINDO}, ${GUINDO_DARK})`,
-                    transform: isRecordButtonPressed ? "scale(0.94) translateY(2px)" : "scale(1)",
-                    transition: "transform 120ms ease, filter 180ms ease",
-                    filter: isRecording ? "saturate(1.15) brightness(1.05)" : "none",
-                    touchAction: "none",
-                    userSelect: "none",
-                    WebkitUserSelect: "none",
-                    WebkitTouchCallout: "none",
+                    background: "rgba(255,255,255,0.12)",
+                    border: "1px solid rgba(255,255,255,0.28)",
+                    backdropFilter: "blur(12px)",
                   }}
-                  aria-label={isRecording ? "Suelta para detener grabacion" : "Manten presionado para grabar"}
                 >
-                  {isRecording ? (
-                    <Square className="w-8 h-8 text-white" strokeWidth={0} fill="white" />
-                  ) : (
-                    <Mic className="w-9 h-9 text-white" strokeWidth={2} />
-                  )}
+                  Cerrar
                 </button>
-
-                <p className="mt-3 text-center text-white/90 text-[12px]" style={{ fontWeight: 600 }}>
-                  {statusCopy}
-                </p>
               </div>
 
-              <div className="absolute inset-x-0 bottom-0 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)]">
-                <div
-                  className="rounded-[28px] border max-h-[46vh] overflow-y-auto"
-                  style={{
-                    background: "rgba(245,245,247,0.96)",
-                    borderColor: "rgba(255,255,255,0.5)",
-                    backdropFilter: "blur(18px)",
-                    WebkitBackdropFilter: "blur(18px)",
-                  }}
-                >
-                  <div className="px-4 pt-4 pb-3">
-                    <p className="text-[13px] text-[#6E6E73]" style={{ fontWeight: 600 }}>
-                      Notas guardadas: {values.length}
+              <div className="px-5 pt-4">
+                <div className="min-h-[112px]">
+                  <p className="text-white text-[29px] leading-[1.12]" style={{ fontWeight: 800 }}>
+                    {displayTranscript ||
+                      (isRecording
+                        ? "Escuchando tu dictado..."
+                        : "Manten presionado el boton central para dictar evidencias")}
+                  </p>
+                </div>
+              </div>
+
+              <div className="relative flex-1">
+                <div className="absolute inset-x-0 top-[34%] z-30 pointer-events-none flex justify-center">
+                  <div className="w-full max-w-[460px] px-4 flex flex-col items-center">
+                    <button
+                      type="button"
+                      onPointerDown={startPressRecording}
+                      onPointerUp={stopPressRecording}
+                      onPointerCancel={stopPressRecording}
+                      onContextMenu={(event) => event.preventDefault()}
+                      onDragStart={(event) => event.preventDefault()}
+                      disabled={!isMicSupported || !canAddMore || isRequestingPermission}
+                      className="pointer-events-auto rounded-full flex items-center justify-center shadow-2xl"
+                      style={{
+                        width: 110,
+                        height: 110,
+                        border: "1px solid rgba(255,255,255,0.45)",
+                        background:
+                          isRecording || isRecordButtonPressed
+                            ? `linear-gradient(150deg, ${GUINDO_DARK}, ${GUINDO})`
+                            : `linear-gradient(150deg, ${GUINDO}, ${GUINDO_DARK})`,
+                        transform: isRecordButtonPressed ? "scale(0.94) translateY(2px)" : "scale(1)",
+                        transition: "transform 120ms ease, filter 180ms ease",
+                        filter: isRecording ? "saturate(1.15) brightness(1.05)" : "none",
+                        touchAction: "none",
+                        userSelect: "none",
+                        WebkitUserSelect: "none",
+                        WebkitTouchCallout: "none",
+                      }}
+                      aria-label={isRecording ? "Suelta para detener grabacion" : "Manten presionado para grabar"}
+                    >
+                      {isRecording ? (
+                        <Square className="w-8 h-8 text-white" strokeWidth={0} fill="white" />
+                      ) : (
+                        <Mic className="w-9 h-9 text-white" strokeWidth={2} />
+                      )}
+                    </button>
+
+                    <p className="mt-3 text-center text-white/90 text-[12px]" style={{ fontWeight: 600 }}>
+                      {statusCopy}
                     </p>
                   </div>
+                </div>
 
-                  <div className="px-3 pb-3 space-y-2.5">
-                    {values.length === 0 ? (
-                      <div className="rounded-xl bg-white px-3 py-3 border border-[#E5E5EA]">
-                        <p className="text-[13px] text-[#8E8E93]">
-                          Aun no hay notas. Mantener presionado el boton central para empezar.
-                        </p>
-                      </div>
-                    ) : (
-                      values.map((note, idx) => {
-                        const audioUrl = audioUrls[note.id];
-                        return (
-                          <div
-                            key={note.id}
-                            className="rounded-xl p-3 bg-white border border-[#E5E5EA]"
-                          >
-                            <div className="flex items-center gap-2 mb-2">
-                              <div
-                                className="w-7 h-7 rounded-full flex items-center justify-center"
-                                style={{ background: "rgba(171,23,56,0.1)" }}
-                              >
-                                <Mic className="w-3.5 h-3.5 text-[#AB1738]" strokeWidth={2} />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-[14px] text-[#1C1C1E]" style={{ fontWeight: 700 }}>
-                                  {values.length > 1
-                                    ? `Descripcion del reporte ${idx + 1}`
-                                    : "Descripcion del reporte"}
-                                </p>
-                                <p className="text-[12px] text-[#8E8E93]">Duracion: {formatTime(note.durationSec)}</p>
-                              </div>
-                              <button
-                                onClick={() => deleteNote(note.id)}
-                                type="button"
-                                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg active:opacity-60"
-                                style={{ background: "rgba(220,38,38,0.08)", minHeight: 38 }}
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-[#DC2626]" strokeWidth={1.8} />
-                                <span className="text-[12px] text-[#DC2626]" style={{ fontWeight: 700 }}>
-                                  Eliminar
-                                </span>
-                              </button>
-                            </div>
+                <div className="absolute inset-x-0 bottom-0 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)]">
+                  <div
+                    className="rounded-[28px] border max-h-[56vh] overflow-y-auto"
+                    style={{
+                      background: "rgba(245,245,247,0.96)",
+                      borderColor: "rgba(255,255,255,0.5)",
+                      backdropFilter: "blur(18px)",
+                      WebkitBackdropFilter: "blur(18px)",
+                    }}
+                  >
+                    <div className="px-4 pt-4 pb-3">
+                      <p className="text-[13px] text-[#6E6E73]" style={{ fontWeight: 600 }}>
+                        Notas guardadas: {values.length}
+                      </p>
+                    </div>
 
-                            {audioUrl && (
-                              <audio controls preload="metadata" src={audioUrl} className="w-full h-9 mb-2" />
-                            )}
-
-                            <div className="rounded-lg px-2.5 py-2 border border-[#E5E5EA] bg-[#FCFCFD]">
-                              <p
-                                className="text-[11px] text-[#8E8E93] mb-1 uppercase tracking-wider"
-                                style={{ fontWeight: 700 }}
-                              >
-                                Transcripcion
-                              </p>
-
-                              {note.transcript ? (
-                                <p className="text-[13px] text-[#1C1C1E]" style={{ lineHeight: 1.5 }}>
-                                  {note.transcript}
-                                </p>
-                              ) : note.transcriptionStatus === "pending" ||
-                                note.transcriptionStatus === "processing" ? (
-                                <div className="flex items-start gap-2">
-                                  <AlertTriangle className="w-3.5 h-3.5 text-[#A16207] shrink-0 mt-0.5" strokeWidth={2} />
-                                  <p className="text-[12px] text-[#8E8E93] italic">
-                                    Transcripcion en proceso. El audio ya quedo guardado.
-                                  </p>
+                    <div className="px-3 pb-3 space-y-2.5">
+                      {values.length === 0 ? (
+                        <div className="rounded-xl bg-white px-3 py-3 border border-[#E5E5EA]">
+                          <p className="text-[13px] text-[#8E8E93]">
+                            Aun no hay notas. Mantener presionado el boton central para empezar.
+                          </p>
+                        </div>
+                      ) : (
+                        values.map((note, idx) => {
+                          const audioUrl = audioUrls[note.id];
+                          return (
+                            <div
+                              key={note.id}
+                              className="rounded-xl p-3 bg-white border border-[#E5E5EA]"
+                            >
+                              <div className="flex items-center gap-2 mb-2">
+                                <div
+                                  className="w-7 h-7 rounded-full flex items-center justify-center"
+                                  style={{ background: "rgba(171,23,56,0.1)" }}
+                                >
+                                  <Mic className="w-3.5 h-3.5 text-[#AB1738]" strokeWidth={2} />
                                 </div>
-                              ) : (
-                                <div className="flex items-start gap-2">
-                                  <AlertTriangle className="w-3.5 h-3.5 text-[#F59E0B] shrink-0 mt-0.5" strokeWidth={2} />
-                                  <p className="text-[12px] text-[#8E8E93] italic">
-                                    Sin transcripcion. El audio se enviara igualmente.
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[14px] text-[#1C1C1E]" style={{ fontWeight: 700 }}>
+                                    {values.length > 1
+                                      ? `Descripcion del reporte ${idx + 1}`
+                                      : "Descripcion del reporte"}
                                   </p>
+                                  <p className="text-[12px] text-[#8E8E93]">Duracion: {formatTime(note.durationSec)}</p>
                                 </div>
+                                <button
+                                  onClick={() => deleteNote(note.id)}
+                                  type="button"
+                                  className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg active:opacity-60"
+                                  style={{ background: "rgba(220,38,38,0.08)", minHeight: 38 }}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-[#DC2626]" strokeWidth={1.8} />
+                                  <span className="text-[12px] text-[#DC2626]" style={{ fontWeight: 700 }}>
+                                    Eliminar
+                                  </span>
+                                </button>
+                              </div>
+
+                              {audioUrl && (
+                                <audio controls preload="metadata" src={audioUrl} className="w-full h-9 mb-2" />
                               )}
+
+                              <div className="rounded-lg px-2.5 py-2 border border-[#E5E5EA] bg-[#FCFCFD]">
+                                <p
+                                  className="text-[11px] text-[#8E8E93] mb-1 uppercase tracking-wider"
+                                  style={{ fontWeight: 700 }}
+                                >
+                                  Transcripcion
+                                </p>
+
+                                {note.transcript ? (
+                                  <p className="text-[13px] text-[#1C1C1E]" style={{ lineHeight: 1.5 }}>
+                                    {note.transcript}
+                                  </p>
+                                ) : note.transcriptionStatus === "pending" ||
+                                  note.transcriptionStatus === "processing" ? (
+                                  <div className="flex items-start gap-2">
+                                    <AlertTriangle className="w-3.5 h-3.5 text-[#A16207] shrink-0 mt-0.5" strokeWidth={2} />
+                                    <p className="text-[12px] text-[#8E8E93] italic">
+                                      Transcripcion en proceso. El audio ya quedo guardado.
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-start gap-2">
+                                    <AlertTriangle className="w-3.5 h-3.5 text-[#F59E0B] shrink-0 mt-0.5" strokeWidth={2} />
+                                    <p className="text-[12px] text-[#8E8E93] italic">
+                                      Sin transcripcion. El audio se enviara igualmente.
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })
-                    )}
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
