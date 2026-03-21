@@ -71,22 +71,35 @@ function selectRecorderMimeType(): string | null {
   return null;
 }
 
-function mergeTranscriptPreview(finalText: string, interimText: string): string {
-  const finalClean = finalText.trim();
-  const interimClean = interimText.trim();
+function normalizeText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
 
-  if (!finalClean) return interimClean;
-  if (!interimClean) return finalClean;
+function composeTranscript(segments: string[]): string {
+  const cleaned: string[] = [];
+  for (const raw of segments) {
+    const current = raw.trim();
+    if (!current) continue;
+    if (cleaned.length === 0) {
+      cleaned.push(current);
+      continue;
+    }
 
-  const finalNorm = finalClean.toLowerCase();
-  const interimNorm = interimClean.toLowerCase();
+    const last = cleaned[cleaned.length - 1];
+    const currentNorm = normalizeText(current);
+    const lastNorm = normalizeText(last);
 
-  if (interimNorm.includes(finalNorm)) return interimClean;
-  if (finalNorm.includes(interimNorm)) return finalClean;
-  if (interimNorm.startsWith(finalNorm)) return interimClean;
-  if (finalNorm.endsWith(interimNorm)) return finalClean;
+    if (currentNorm === lastNorm) continue;
+    if (currentNorm.startsWith(lastNorm)) {
+      cleaned[cleaned.length - 1] = current;
+      continue;
+    }
+    if (lastNorm.startsWith(currentNorm)) continue;
 
-  return `${finalClean} ${interimClean}`.trim();
+    cleaned.push(current);
+  }
+
+  return cleaned.join(" ").replace(/\s+/g, " ").trim();
 }
 
 export function AudioRecorder911({
@@ -363,27 +376,22 @@ export function AudioRecorder911({
 
         recognition.onresult = (event: SpeechRecognitionEvent) => {
           const finalSegments: string[] = [];
-          let previousNorm = "";
-          let interim = "";
+          const previewSegments: string[] = [];
           for (let i = 0; i < event.results.length; i++) {
             const result = event.results[i];
             const text = result[0]?.transcript?.trim() || "";
             if (!text) continue;
+            previewSegments.push(text);
             if (result.isFinal) {
-              const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
-              if (normalized && normalized !== previousNorm) {
-                finalSegments.push(text);
-                previousNorm = normalized;
-              }
-            } else {
-              interim = text;
+              finalSegments.push(text);
             }
           }
-          const finalText = finalSegments.join(" ").replace(/\s+/g, " ").trim();
+          const finalText = composeTranscript(finalSegments);
+          const previewText = composeTranscript(previewSegments);
           transcriptRef.current = finalText;
-          interimRef.current = interim;
-          setLiveTranscript(finalText);
-          setInterimText(interim);
+          interimRef.current = previewText;
+          setLiveTranscript(previewText);
+          setInterimText("");
         };
 
         recognition.onerror = (event: Event) => {
@@ -481,9 +489,9 @@ export function AudioRecorder911({
 
   const stopPressRecording = useCallback(() => {
     setIsRecordButtonPressed(false);
-    if (!isPressingRef.current) return;
+    const wasPressing = isPressingRef.current;
     isPressingRef.current = false;
-    if (isRecording) stopRecording();
+    if (isRecording || wasPressing) stopRecording();
   }, [isRecording, stopRecording]);
 
   useEffect(() => {
@@ -559,7 +567,7 @@ export function AudioRecorder911({
     [onChange, values],
   );
 
-  const displayTranscript = mergeTranscriptPreview(liveTranscript, interimText);
+  const displayTranscript = liveTranscript.trim() || interimText.trim();
   const statusCopy = !isMicSupported
     ? "Grabacion no disponible en este navegador"
     : isRequestingPermission
@@ -591,15 +599,17 @@ export function AudioRecorder911({
         </p>
       </button>
 
-      {values.length > 0 && (
-        <div
-          className="rounded-xl border bg-white px-3 py-2.5 space-y-2"
-          style={{ borderColor: "#E5E5EA" }}
-        >
-          <p className="text-[12px] text-[#6E6E73]" style={{ fontWeight: 700 }}>
-            Notas de voz cargadas ({values.length})
-          </p>
-          {values.map((note, idx) => (
+      <div
+        className="rounded-xl border bg-white px-3 py-2.5 space-y-2"
+        style={{ borderColor: "#E5E5EA" }}
+      >
+        <p className="text-[12px] text-[#6E6E73]" style={{ fontWeight: 700 }}>
+          Notas de voz cargadas ({values.length})
+        </p>
+        {values.length === 0 ? (
+          <p className="text-[12px] text-[#8E8E93]">Aún no hay notas guardadas.</p>
+        ) : (
+          values.map((note, idx) => (
             <div
               key={note.id}
               className="rounded-lg border px-2.5 py-2"
@@ -627,9 +637,9 @@ export function AudioRecorder911({
                     : "Audio guardado sin transcripción."}
               </p>
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
 
       {isModalOpen && typeof document !== "undefined" &&
         createPortal(
@@ -651,13 +661,13 @@ export function AudioRecorder911({
                     backdropFilter: "blur(12px)",
                   }}
                 >
-                  Cerrar
+                  Guardar
                 </button>
               </div>
 
               <div className="px-5 pt-4">
-                <div className="min-h-[104px]">
-                  <p className="text-white text-[29px] leading-[1.12]" style={{ fontWeight: 800 }}>
+                <div className="min-h-[72px]">
+                  <p className="text-white text-[18px] leading-[1.25]" style={{ fontWeight: 700 }}>
                     {displayTranscript ||
                       (isRecording
                         ? "Escuchando tu dictado..."
@@ -666,7 +676,7 @@ export function AudioRecorder911({
                 </div>
               </div>
 
-              <div className="px-4 pt-2 pb-3 flex justify-center">
+              <div className="px-4 pt-1 pb-2 flex justify-center">
                 <div className="w-full max-w-[460px] flex flex-col items-center">
                   <button
                     type="button"
