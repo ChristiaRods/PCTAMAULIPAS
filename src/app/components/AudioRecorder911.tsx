@@ -1,10 +1,9 @@
 import { useState, useRef, useCallback, useEffect, type PointerEvent } from "react";
-import { Mic, Square, Trash2, Plus, AlertTriangle } from "lucide-react";
+import { Mic, Square, Trash2, AlertTriangle } from "lucide-react";
 
 const GUINDO = "#AB1738";
 const GUINDO_DARK = "#8B1028";
 
-/* ─── Types ─── */
 export interface AudioValue {
   id: string;
   blob: Blob;
@@ -28,7 +27,6 @@ function formatTime(sec: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/* ─── SpeechRecognition shim para TypeScript ─── */
 const getSR = (): (new () => SpeechRecognition) | null => {
   if (typeof window === "undefined") return null;
   return (
@@ -62,7 +60,6 @@ function isIOSLikeDevice(): boolean {
 function selectRecorderMimeType(): string | null {
   if (typeof MediaRecorder === "undefined") return null;
 
-  // iOS/Safari is more stable with mp4 (or browser default) than webm.
   const candidates = isIOSLikeDevice()
     ? ["audio/mp4", "audio/mpeg", "audio/aac", "audio/webm;codecs=opus", "audio/webm"]
     : ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
@@ -73,30 +70,27 @@ function selectRecorderMimeType(): string | null {
   return null;
 }
 
-/* ═════════════════════════════════════════════════════════════════
-   COMPONENT
-   ═════════════════════════════════════════════════════════════════ */
 export function AudioRecorder911({
   values,
   onChange,
   maxNotes = 5,
 }: Props) {
-  /* ─── Internal UI state ─── */
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordButtonPressed, setIsRecordButtonPressed] = useState(false);
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+  const [micPermission, setMicPermission] = useState<"unknown" | "granted" | "denied">("unknown");
   const [interimText, setInterimText] = useState("");
   const [liveTranscript, setLiveTranscript] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
-  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
-  const [micPermission, setMicPermission] = useState<"unknown" | "granted" | "denied">("unknown");
 
-  /* ─── Refs ─── */
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
-  const transcriptRef = useRef<string>(""); // accumulated final transcript
+  const transcriptRef = useRef<string>("");
   const interimRef = useRef<string>("");
   const shouldRestartRecognitionRef = useRef<boolean>(false);
   const isPressingRef = useRef<boolean>(false);
@@ -108,7 +102,6 @@ export function AudioRecorder911({
     !!navigator.mediaDevices?.getUserMedia &&
     typeof MediaRecorder !== "undefined";
   const isSpeechRecognitionSupported = Boolean(getSR());
-
   const canAddMore = values.length < maxNotes;
   const hasMicPermission = micPermission === "granted";
 
@@ -133,10 +126,10 @@ export function AudioRecorder911({
       if (name === "NotAllowedError" || name === "PermissionDeniedError") {
         setMicPermission("denied");
         alert(
-          "Necesitamos permiso de micrófono para grabar notas de voz. Puedes activarlo en Configuración del navegador.",
+          "Necesitamos permiso de microfono para grabar notas de voz. Puedes activarlo en configuracion del navegador.",
         );
       } else {
-        alert("No se pudo activar el micrófono. Inténtalo de nuevo.");
+        alert("No se pudo activar el microfono. Intentalo de nuevo.");
       }
       return false;
     } finally {
@@ -175,7 +168,6 @@ export function AudioRecorder911({
     };
   }, [isMicSupported]);
 
-  /* ─── Object URLs cleanup ─── */
   useEffect(() => {
     setAudioUrls((prev) => {
       const activeIds = new Set(values.map((v) => v.id));
@@ -228,7 +220,15 @@ export function AudioRecorder911({
     };
   }, [releaseStream]);
 
-  /* ─── Stop recording ─── */
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isModalOpen]);
+
   const stopRecording = useCallback(() => {
     shouldRestartRecognitionRef.current = false;
     if (!transcriptRef.current.trim() && interimRef.current.trim()) {
@@ -259,17 +259,12 @@ export function AudioRecorder911({
     setLiveTranscript("");
   }, [releaseStream]);
 
-  /* ─── Start recording ─── */
   const startRecording = useCallback(async () => {
-    if (!isMicSupported) {
-      alert("Tu navegador no soporta grabación de audio.");
-      return;
-    }
+    if (!isMicSupported || !canAddMore) return;
     if (!hasMicPermission) {
       const granted = await requestMicPermission();
       if (!granted) return;
     }
-    if (!canAddMore) return;
 
     try {
       transcriptRef.current = "";
@@ -295,39 +290,41 @@ export function AudioRecorder911({
       } catch {
         recorder = new MediaRecorder(stream);
       }
+
       const mimeType = recorder.mimeType || selectedMimeType || "audio/mp4";
       mediaRecorderRef.current = recorder;
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
 
       recorder.onstop = () => {
         shouldRestartRecognitionRef.current = false;
         releaseStream();
+
         const blob = new Blob(audioChunksRef.current, { type: mimeType });
         if (blob.size === 0) {
-          alert(
-            "No se pudo guardar el audio de esta nota. Intenta grabar nuevamente.",
-          );
+          alert("No se pudo guardar el audio de esta nota. Intenta grabar nuevamente.");
           return;
         }
+
         const durationSec = Math.max(
           1,
           Math.round((Date.now() - startTimeRef.current) / 1000),
         );
         const transcript = transcriptRef.current.trim() || interimRef.current.trim();
+
         const newNote: AudioValue = {
           id: makeAudioId(),
           blob,
           mimeType,
           transcript,
           durationSec,
-          transcriptionStatus:
-            transcript.trim().length > 0 ? "done" : "pending",
+          transcriptionStatus: transcript.trim().length > 0 ? "done" : "pending",
           transcriptionError: null,
           transcribedAt: transcript.trim().length > 0 ? new Date().toISOString() : null,
         };
+
         onChange([...values, newNote]);
       };
 
@@ -363,19 +360,10 @@ export function AudioRecorder911({
         recognition.onerror = (event: Event) => {
           const maybeError = event as Event & { error?: string; message?: string };
           const errName = String(maybeError.error || "");
-          const errMessage = String(maybeError.message || "");
-          // Keep benign errors quiet, but log the rest to debug inconsistent sessions.
-          if (
-            errName &&
-            errName !== "no-speech" &&
-            errName !== "aborted"
-          ) {
-            console.warn("[AudioRecorder911] speech error:", errName, errMessage);
+          if (errName && errName !== "no-speech" && errName !== "aborted") {
+            console.warn("[AudioRecorder911] speech error:", errName);
           }
-          if (
-            errName === "not-allowed" ||
-            errName === "service-not-allowed"
-          ) {
+          if (errName === "not-allowed" || errName === "service-not-allowed") {
             shouldRestartRecognitionRef.current = false;
           }
         };
@@ -386,22 +374,18 @@ export function AudioRecorder911({
             mediaRecorderRef.current?.state === "recording" &&
             recognitionRef.current
           ) {
-            try {
-              setTimeout(() => {
-                if (
-                  shouldRestartRecognitionRef.current &&
-                  mediaRecorderRef.current?.state === "recording"
-                ) {
-                  try {
-                    recognition.start();
-                  } catch {
-                    // ignore
-                  }
+            setTimeout(() => {
+              if (
+                shouldRestartRecognitionRef.current &&
+                mediaRecorderRef.current?.state === "recording"
+              ) {
+                try {
+                  recognition.start();
+                } catch {
+                  // ignore
                 }
-              }, 120);
-            } catch {
-              // ignore
-            }
+              }
+            }, 120);
           }
         };
 
@@ -410,20 +394,16 @@ export function AudioRecorder911({
       }
 
       setIsRecording(true);
-      if (!isPressingRef.current) {
-        stopRecording();
-      }
+      if (!isPressingRef.current) stopRecording();
     } catch (err: unknown) {
       isPressingRef.current = false;
       releaseStream();
       const name = err instanceof Error ? err.name : "";
       if (name === "NotAllowedError" || name === "PermissionDeniedError") {
         setMicPermission("denied");
-        alert(
-          "Permiso de micrófono denegado. Ve a Configuración > Safari/Chrome para habilitarlo.",
-        );
+        alert("Permiso de microfono denegado. Habilitalo en configuracion.");
       } else {
-        alert("No se pudo acceder al micrófono. Verifica los permisos.");
+        alert("No se pudo acceder al microfono. Verifica permisos.");
       }
     }
   }, [
@@ -440,6 +420,7 @@ export function AudioRecorder911({
   const startPressRecording = useCallback(
     (event: PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
+      setIsRecordButtonPressed(true);
       if (
         !isMicSupported ||
         !canAddMore ||
@@ -468,11 +449,10 @@ export function AudioRecorder911({
   );
 
   const stopPressRecording = useCallback(() => {
+    setIsRecordButtonPressed(false);
     if (!isPressingRef.current) return;
     isPressingRef.current = false;
-    if (isRecording) {
-      stopRecording();
-    }
+    if (isRecording) stopRecording();
   }, [isRecording, stopRecording]);
 
   useEffect(() => {
@@ -494,6 +474,7 @@ export function AudioRecorder911({
       if (!isRecording && !isPressingRef.current) return;
       isPressingRef.current = false;
       stopRecording();
+      setIsRecordButtonPressed(false);
     };
 
     const handleVisibility = () => {
@@ -509,10 +490,24 @@ export function AudioRecorder911({
     };
   }, [isRecording, stopRecording]);
 
+  const openComposer = useCallback(() => {
+    setIsModalOpen(true);
+    if (isMicSupported && !hasMicPermission && !isRequestingPermission) {
+      void requestMicPermission();
+    }
+  }, [hasMicPermission, isMicSupported, isRequestingPermission, requestMicPermission]);
+
+  const closeComposer = useCallback(() => {
+    isPressingRef.current = false;
+    if (isRecording) stopRecording();
+    setIsRecordButtonPressed(false);
+    setIsModalOpen(false);
+  }, [isRecording, stopRecording]);
+
   const deleteNote = useCallback(
     (id: string) => {
       const confirmed = window.confirm(
-        "¿Eliminar esta nota de voz y su transcripción? Esta acción no se puede deshacer.",
+        "Eliminar esta nota de voz y su transcripcion? Esta accion no se puede deshacer.",
       );
       if (!confirmed) return;
       onChange(values.filter((v) => v.id !== id));
@@ -520,279 +515,224 @@ export function AudioRecorder911({
     [onChange, values],
   );
 
-  const displayTranscript = liveTranscript + interimText;
-  const hasLiveTranscript = displayTranscript.trim().length > 0;
+  const displayTranscript = `${liveTranscript}${interimText}`.trim();
   const holdToRecordEnabled =
     isMicSupported && canAddMore && hasMicPermission && !isRequestingPermission;
-  const buttonAriaLabel = !isMicSupported
-    ? "Grabacion no disponible"
-    : !canAddMore
-      ? "Limite de notas alcanzado"
+  const statusCopy = !isMicSupported
+    ? "Grabacion no disponible en este navegador"
+    : isRequestingPermission
+      ? "Confirma el permiso para usar el microfono"
       : !hasMicPermission
-        ? "Activar microfono"
+        ? "Activa microfono para iniciar"
         : isRecording
-          ? "Suelta para detener grabacion"
-          : "Manten presionado para grabar";
+          ? `Grabando... ${formatTime(elapsed)}. Suelta para guardar`
+          : canAddMore
+            ? "Manten presionado para dictar"
+            : `Limite alcanzado (${maxNotes})`;
 
   return (
-    <div className="mt-2 space-y-2.5">
-      {/* Record card */}
-      <div
-        className="rounded-xl overflow-hidden"
+    <div className="mt-2 space-y-2">
+      <button
+        onClick={openComposer}
+        type="button"
+        className="w-full rounded-xl px-4 py-3 text-left"
         style={{
-          background: isRecording ? "#FFF5F7" : "#F9F9FB",
-          border: isRecording
-            ? "1.5px solid rgba(171,23,56,0.2)"
-            : "1px solid #E5E5EA",
+          background: "linear-gradient(135deg, rgba(171,23,56,0.1), rgba(139,16,40,0.08))",
+          border: "1px solid rgba(171,23,56,0.18)",
         }}
       >
-        {isRecording ? (
-          <>
-            <div className="flex items-center gap-2.5 px-3 py-2.5">
-              <span
-                className="w-2 h-2 rounded-full shrink-0"
+        <p className="text-[15px] text-[#AB1738]" style={{ fontWeight: 700 }}>
+          Dictar evidencias del reporte
+        </p>
+        <p className="text-[12px] text-[#8E8E93] mt-0.5">
+          Abre la modal de voz para grabar, transcribir y revisar notas.
+        </p>
+      </button>
+
+      {values.length > 0 && (
+        <p className="text-[12px] text-[#6E6E73] px-1">
+          {values.length} {values.length === 1 ? "nota lista" : "notas listas"}
+        </p>
+      )}
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[120]" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-[4px]" />
+
+          <div className="absolute inset-0 flex flex-col" style={{ userSelect: "none", WebkitUserSelect: "none" }}>
+            <div className="flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top)+10px)]">
+              <p className="text-white text-[14px]" style={{ fontWeight: 700 }}>
+                Evidencias por voz
+              </p>
+              <button
+                onClick={closeComposer}
+                type="button"
+                className="px-3 py-1.5 rounded-full text-[13px] text-white"
                 style={{
-                  background: GUINDO,
-                  display: "inline-block",
-                  animation: "pulse 1s ease-in-out infinite",
+                  background: "rgba(255,255,255,0.12)",
+                  border: "1px solid rgba(255,255,255,0.28)",
+                  backdropFilter: "blur(12px)",
                 }}
-              />
-              <span
-                className="text-[13px] text-[#AB1738] flex-1 tabular-nums"
-                style={{ fontWeight: 600 }}
               >
-                Grabando... {formatTime(elapsed)}
-              </span>
+                Cerrar
+              </button>
             </div>
-          </>
-        ) : null}
 
-        <button
-          onPointerDown={startPressRecording}
-          onPointerUp={stopPressRecording}
-          onPointerCancel={stopPressRecording}
-          onPointerLeave={isRecording ? stopPressRecording : undefined}
-          onContextMenu={(event) => event.preventDefault()}
-          onDragStart={(event) => event.preventDefault()}
-          disabled={!isMicSupported || !canAddMore || isRequestingPermission}
-          className="w-full flex items-center gap-3 px-3 py-3 transition-all active:scale-[0.99] select-none"
-          style={{
-            opacity: !isMicSupported || !canAddMore || isRequestingPermission ? 0.55 : 1,
-            touchAction: "none",
-            userSelect: "none",
-            WebkitUserSelect: "none",
-            WebkitTouchCallout: "none",
-          }}
-          aria-label={buttonAriaLabel}
-        >
-          <div
-            className="w-12 h-12 rounded-full flex items-center justify-center shrink-0"
-            style={{
-              background:
-                isMicSupported && canAddMore
-                  ? `linear-gradient(135deg, ${GUINDO}, ${GUINDO_DARK})`
-                  : "#C7C7CC",
-            }}
-          >
-            {isRecording ? (
-              <Square
-                className="w-4 h-4 text-white"
-                strokeWidth={0}
-                fill="white"
-              />
-            ) : (
-              <Mic className="w-5 h-5 text-white" strokeWidth={1.8} />
-            )}
-          </div>
-          <div className="text-left flex-1 min-w-0">
-            <p
-              className="text-[15px] text-[#AB1738]"
-              style={{ fontWeight: 700 }}
-            >
-              {!canAddMore
-                ? `Limite alcanzado (${maxNotes})`
-                : isRecording
-                  ? `Grabando... ${formatTime(elapsed)}`
-                  : isRequestingPermission
-                    ? "Activando micrófono..."
-                    : holdToRecordEnabled
-                      ? "Mantén presionado para grabar"
-                      : "Activar micrófono"}
-            </p>
-            <p className="text-[12px] text-[#8E8E93]">
-              {!isMicSupported
-                ? "Grabacion no disponible en este navegador"
-                : isRequestingPermission
-                  ? "Confirma el permiso en pantalla para continuar."
-                  : !hasMicPermission
-                    ? "Primero activa el micrófono. Después usa mantener presionado para grabar."
-                : isRecording
-                  ? "Suelta para guardar la nota."
-                  : isSpeechRecognitionSupported
-                    ? "Asegurate de acercarte lo suficiente al microfono para tener una buena transcripcion."
-                    : "Este dispositivo grabara la nota de voz, pero la transcripcion automatica puede no estar disponible."}
-            </p>
-          </div>
-          {isRecording ? (
-            <span
-              className="w-2 h-2 rounded-full shrink-0"
-              style={{
-                background: GUINDO,
-                display: "inline-block",
-                animation: "pulse 1s ease-in-out infinite",
-              }}
-            />
-          ) : (
-            <Plus className="w-4 h-4 text-[#AB1738]" strokeWidth={2.2} />
-          )}
-        </button>
-
-        {isRecording &&
-          (hasLiveTranscript ? (
-            <div className="px-3 pb-3">
-              <div
-                className="rounded-lg px-2.5 py-2"
-                style={{
-                  background: "rgba(171,23,56,0.04)",
-                  border: "1px solid rgba(171,23,56,0.1)",
-                }}
-              >
-                <p
-                  className="text-[13px] text-[#1C1C1E]"
-                  style={{ lineHeight: 1.55 }}
-                >
-                  <span>{liveTranscript}</span>
-                  {interimText && (
-                    <span className="text-[#8E8E93]">{interimText}</span>
-                  )}
+            <div className="px-5 pt-4">
+              <div className="min-h-[112px]">
+                <p className="text-white text-[30px] leading-[1.12]" style={{ fontWeight: 800 }}>
+                  {displayTranscript ||
+                    (isRecording
+                      ? "Escuchando tu dictado..."
+                      : "Manten presionado el boton central para dictar evidencias")}
                 </p>
               </div>
             </div>
-          ) : (
-            <div className="px-3 pb-3">
-              <p className="text-[12px] text-[#8E8E93] italic">
-                {isSpeechRecognitionSupported
-                  ? "Hable claramente para ver la transcripcion en tiempo real..."
-                  : "Tu dispositivo grabara el audio, pero no soporta transcripcion automatica en tiempo real."}
-              </p>
-            </div>
-          ))}
-      </div>
 
-      {values.length > 0 && (
-        <div className="space-y-2">
-          {values.map((note, idx) => {
-            const audioUrl = audioUrls[note.id];
-            return (
-              <div
-                key={note.id}
-                className="rounded-xl p-3"
-                style={{
-                  background: "#F9F9FB",
-                  border: "1px solid #E5E5EA",
-                }}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <div
-                    className="w-7 h-7 rounded-full flex items-center justify-center"
-                    style={{ background: "rgba(171,23,56,0.1)" }}
-                  >
-                    <Mic className="w-3.5 h-3.5 text-[#AB1738]" strokeWidth={2} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p
-                      className="text-[14px] text-[#1C1C1E]"
-                      style={{ fontWeight: 700 }}
-                    >
-                      {values.length > 1
-                        ? `Descripción del reporte ${idx + 1}`
-                        : "Descripción del reporte"}
-                    </p>
-                    <p className="text-[12px] text-[#8E8E93]">
-                      Duración: {formatTime(note.durationSec)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => deleteNote(note.id)}
-                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg active:opacity-60"
-                    style={{
-                      background: "rgba(220,38,38,0.08)",
-                      minHeight: 40,
-                    }}
-                    aria-label={`Eliminar nota de voz ${idx + 1}`}
-                  >
-                    <Trash2
-                      className="w-3.5 h-3.5 text-[#DC2626]"
-                      strokeWidth={1.8}
-                    />
-                    <span
-                      className="text-[12px] text-[#DC2626]"
-                      style={{ fontWeight: 700 }}
-                    >
-                      Eliminar
-                    </span>
-                  </button>
-                </div>
-
-                {audioUrl && (
-                  <audio
-                    controls
-                    preload="metadata"
-                    src={audioUrl}
-                    className="w-full h-10 mb-2"
-                  />
-                )}
-
-                <div
-                  className="rounded-lg px-2.5 py-2"
+            <div className="relative flex-1">
+              <div className="absolute left-1/2 top-[44%] -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
+                <button
+                  type="button"
+                  onPointerDown={startPressRecording}
+                  onPointerUp={stopPressRecording}
+                  onPointerCancel={stopPressRecording}
+                  onContextMenu={(event) => event.preventDefault()}
+                  onDragStart={(event) => event.preventDefault()}
+                  disabled={!isMicSupported || !canAddMore || isRequestingPermission}
+                  className="pointer-events-auto rounded-full flex items-center justify-center shadow-2xl"
                   style={{
-                    background: "#FFFFFF",
-                    border: "1px solid #E5E5EA",
+                    width: 110,
+                    height: 110,
+                    border: "1px solid rgba(255,255,255,0.45)",
+                    background:
+                      isRecording || isRecordButtonPressed
+                        ? `linear-gradient(150deg, ${GUINDO_DARK}, ${GUINDO})`
+                        : `linear-gradient(150deg, ${GUINDO}, ${GUINDO_DARK})`,
+                    transform: isRecordButtonPressed ? "scale(0.94) translateY(2px)" : "scale(1)",
+                    transition: "transform 120ms ease, filter 180ms ease",
+                    filter: isRecording ? "saturate(1.15) brightness(1.05)" : "none",
+                    touchAction: "none",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    WebkitTouchCallout: "none",
+                  }}
+                  aria-label={isRecording ? "Suelta para detener grabacion" : "Manten presionado para grabar"}
+                >
+                  {isRecording ? (
+                    <Square className="w-8 h-8 text-white" strokeWidth={0} fill="white" />
+                  ) : (
+                    <Mic className="w-9 h-9 text-white" strokeWidth={2} />
+                  )}
+                </button>
+
+                <p className="mt-3 text-center text-white/90 text-[12px]" style={{ fontWeight: 600 }}>
+                  {statusCopy}
+                </p>
+              </div>
+
+              <div className="absolute inset-x-0 bottom-0 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)]">
+                <div
+                  className="rounded-[28px] border max-h-[46vh] overflow-y-auto"
+                  style={{
+                    background: "rgba(245,245,247,0.96)",
+                    borderColor: "rgba(255,255,255,0.5)",
+                    backdropFilter: "blur(18px)",
+                    WebkitBackdropFilter: "blur(18px)",
                   }}
                 >
-                  <p
-                    className="text-[11px] text-[#8E8E93] mb-1 uppercase tracking-wider"
-                    style={{ fontWeight: 700 }}
-                  >
-                    Transcripción
-                  </p>
-                  {note.transcript ? (
-                    <p
-                      className="text-[13px] text-[#1C1C1E]"
-                      style={{ lineHeight: 1.55 }}
-                    >
-                      {note.transcript}
+                  <div className="px-4 pt-4 pb-3">
+                    <p className="text-[13px] text-[#6E6E73]" style={{ fontWeight: 600 }}>
+                      Notas guardadas: {values.length}
                     </p>
-                  ) : note.transcriptionStatus === "pending" ||
-                    note.transcriptionStatus === "processing" ? (
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle
-                        className="w-3.5 h-3.5 text-[#A16207] shrink-0 mt-0.5"
-                        strokeWidth={2}
-                      />
-                      <p className="text-[12px] text-[#8E8E93] italic">
-                        Transcripcion en proceso. El audio ya quedo guardado.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle
-                        className="w-3.5 h-3.5 text-[#F59E0B] shrink-0 mt-0.5"
-                        strokeWidth={2}
-                      />
-                      <p className="text-[12px] text-[#8E8E93] italic">
-                        Sin transcripcion. El audio se enviara igualmente.
-                      </p>
-                    </div>
-                  )}
+                  </div>
+
+                  <div className="px-3 pb-3 space-y-2.5">
+                    {values.length === 0 ? (
+                      <div className="rounded-xl bg-white px-3 py-3 border border-[#E5E5EA]">
+                        <p className="text-[13px] text-[#8E8E93]">
+                          Aun no hay notas. Mantener presionado el boton central para empezar.
+                        </p>
+                      </div>
+                    ) : (
+                      values.map((note, idx) => {
+                        const audioUrl = audioUrls[note.id];
+                        return (
+                          <div
+                            key={note.id}
+                            className="rounded-xl p-3 bg-white border border-[#E5E5EA]"
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <div
+                                className="w-7 h-7 rounded-full flex items-center justify-center"
+                                style={{ background: "rgba(171,23,56,0.1)" }}
+                              >
+                                <Mic className="w-3.5 h-3.5 text-[#AB1738]" strokeWidth={2} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[14px] text-[#1C1C1E]" style={{ fontWeight: 700 }}>
+                                  {values.length > 1
+                                    ? `Descripcion del reporte ${idx + 1}`
+                                    : "Descripcion del reporte"}
+                                </p>
+                                <p className="text-[12px] text-[#8E8E93]">Duracion: {formatTime(note.durationSec)}</p>
+                              </div>
+                              <button
+                                onClick={() => deleteNote(note.id)}
+                                type="button"
+                                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg active:opacity-60"
+                                style={{ background: "rgba(220,38,38,0.08)", minHeight: 38 }}
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-[#DC2626]" strokeWidth={1.8} />
+                                <span className="text-[12px] text-[#DC2626]" style={{ fontWeight: 700 }}>
+                                  Eliminar
+                                </span>
+                              </button>
+                            </div>
+
+                            {audioUrl && (
+                              <audio controls preload="metadata" src={audioUrl} className="w-full h-9 mb-2" />
+                            )}
+
+                            <div className="rounded-lg px-2.5 py-2 border border-[#E5E5EA] bg-[#FCFCFD]">
+                              <p
+                                className="text-[11px] text-[#8E8E93] mb-1 uppercase tracking-wider"
+                                style={{ fontWeight: 700 }}
+                              >
+                                Transcripcion
+                              </p>
+
+                              {note.transcript ? (
+                                <p className="text-[13px] text-[#1C1C1E]" style={{ lineHeight: 1.5 }}>
+                                  {note.transcript}
+                                </p>
+                              ) : note.transcriptionStatus === "pending" ||
+                                note.transcriptionStatus === "processing" ? (
+                                <div className="flex items-start gap-2">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-[#A16207] shrink-0 mt-0.5" strokeWidth={2} />
+                                  <p className="text-[12px] text-[#8E8E93] italic">
+                                    Transcripcion en proceso. El audio ya quedo guardado.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="flex items-start gap-2">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-[#F59E0B] shrink-0 mt-0.5" strokeWidth={2} />
+                                  <p className="text-[12px] text-[#8E8E93] italic">
+                                    Sin transcripcion. El audio se enviara igualmente.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               </div>
-            );
-          })}
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 }
-
-
