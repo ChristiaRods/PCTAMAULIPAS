@@ -47,6 +47,10 @@ const THEME = {
     "conic-gradient(from 0deg, rgba(171,23,56,0.10), rgba(188,149,91,0.08), rgba(230,213,181,0.06), rgba(205,166,122,0.08), rgba(84,86,91,0.06), rgba(171,23,56,0.10))",
   fallbackTopHighlight:
     "linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(255,255,255,0.0))",
+  pressedBarShadow:
+    "0 8px 20px rgba(58,5,16,0.18), 0 1px 4px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.42)",
+  activeSatelliteShadow:
+    "0 14px 28px rgba(56,8,18,0.24), 0 3px 9px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.56)",
 } as const;
 
 interface LiquidGlassNavProps {
@@ -62,6 +66,16 @@ type BubblePosition = {
   width: number;
   height: number;
 };
+
+type InteractionState = {
+  x: number;
+  y: number;
+  intensity: number;
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
 function supportsBackdropFilter() {
   if (typeof window === "undefined" || typeof CSS === "undefined" || typeof CSS.supports !== "function") {
@@ -86,9 +100,22 @@ export function LiquidGlassNav({
   const prevViewRef = useRef<NavView>(currentView);
   const isFirstRender = useRef(true);
   const squishRef = useRef<HTMLDivElement>(null);
+  const interactionRafRef = useRef<number | null>(null);
+  const interactionSnapshotRef = useRef<InteractionState>({
+    x: 50,
+    y: 16,
+    intensity: 0.18,
+  });
   const [bubblePos, setBubblePos] = useState<BubblePosition | null>(null);
   const [hasBackdrop, setHasBackdrop] = useState(true);
   const [highContrast, setHighContrast] = useState(false);
+  const [interaction, setInteraction] = useState<InteractionState>({
+    x: 50,
+    y: 16,
+    intensity: 0.18,
+  });
+  const [isPressingNav, setIsPressingNav] = useState(false);
+  const [pressedView, setPressedView] = useState<NavView | null>(null);
 
   useEffect(() => {
     setHasBackdrop(supportsBackdropFilter());
@@ -103,6 +130,62 @@ export function LiquidGlassNav({
       mediaQuery.removeEventListener?.("change", applyContrast);
     };
   }, []);
+
+  const commitInteraction = useCallback((next: InteractionState) => {
+    interactionSnapshotRef.current = next;
+    if (interactionRafRef.current !== null) return;
+    interactionRafRef.current = requestAnimationFrame(() => {
+      interactionRafRef.current = null;
+      setInteraction(interactionSnapshotRef.current);
+    });
+  }, []);
+
+  const setInteractionFromClientPoint = useCallback(
+    (clientX: number, clientY: number, intensity: number) => {
+      const container = navContainerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const x = clamp(((clientX - rect.left) / rect.width) * 100, 0, 100);
+      const y = clamp(((clientY - rect.top) / rect.height) * 100, 0, 100);
+      commitInteraction({
+        x,
+        y,
+        intensity: clamp(intensity, 0.06, 1),
+      });
+    },
+    [commitInteraction],
+  );
+
+  const releaseInteraction = useCallback(() => {
+    setIsPressingNav(false);
+    setPressedView(null);
+    commitInteraction({
+      x: interactionSnapshotRef.current.x,
+      y: interactionSnapshotRef.current.y,
+      intensity: 0.18,
+    });
+  }, [commitInteraction]);
+
+  useEffect(() => {
+    return () => {
+      if (interactionRafRef.current !== null) {
+        cancelAnimationFrame(interactionRafRef.current);
+        interactionRafRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isPressingNav) return;
+    const endPress = () => releaseInteraction();
+    window.addEventListener("pointerup", endPress, { passive: true });
+    window.addEventListener("pointercancel", endPress, { passive: true });
+    return () => {
+      window.removeEventListener("pointerup", endPress);
+      window.removeEventListener("pointercancel", endPress);
+    };
+  }, [isPressingNav, releaseInteraction]);
 
   const measureButton = useCallback((viewId: NavView): BubblePosition | null => {
     const button = buttonRefs.current.get(viewId);
@@ -137,16 +220,18 @@ export function LiquidGlassNav({
     if (!reduceMotion && !isFirstRender.current && distance > 0 && previousIndex >= 0 && currentIndex >= 0 && squishRef.current) {
       const scaleX = 1 + Math.min(distance * 0.22, 0.58);
       const scaleY = 1 - Math.min(distance * 0.12, 0.24);
+      const direction = currentIndex > previousIndex ? 1 : -1;
+      const skew = direction * Math.min(5 + distance, 8);
 
       squishRef.current.animate(
         [
           { transform: "scaleX(1) scaleY(1)", offset: 0 },
-          { transform: `scaleX(${scaleX}) scaleY(${scaleY})`, offset: 0.3 },
-          { transform: "scaleX(0.92) scaleY(1.08)", offset: 0.65 },
+          { transform: `scaleX(${scaleX}) scaleY(${scaleY}) skewX(${skew}deg)`, offset: 0.28 },
+          { transform: `scaleX(0.92) scaleY(1.08) skewX(${-skew * 0.34}deg)`, offset: 0.62 },
           { transform: "scaleX(1) scaleY(1)", offset: 1 },
         ],
         {
-          duration: 560,
+          duration: 620,
           easing: "cubic-bezier(0.22, 1, 0.36, 1)",
           fill: "none",
         },
@@ -201,9 +286,14 @@ export function LiquidGlassNav({
     if (highContrast) return THEME.highContrastInactive;
     return THEME.inactiveColor;
   }, [highContrast]);
+  const isSatelliteActive = currentView === satelliteNavItem.id;
+  const SatelliteIcon = satelliteNavItem.icon;
 
   const navContainerStyle = useMemo<React.CSSProperties>(() => {
-    const background = hasBackdrop ? THEME.barBg : THEME.barBgFallback;
+    const interactionOpacity = 0.12 + interaction.intensity * 0.2;
+    const background = hasBackdrop
+      ? `radial-gradient(120% 100% at ${interaction.x}% ${interaction.y}%, rgba(255,255,255,${interactionOpacity}), rgba(255,255,255,0) 68%), ${THEME.barBg}`
+      : THEME.barBgFallback;
     const border = hasBackdrop ? THEME.barBorder : THEME.barBorderFallback;
 
     return {
@@ -211,37 +301,53 @@ export function LiquidGlassNav({
       backdropFilter: hasBackdrop ? "blur(44px) saturate(2.1)" : "none",
       WebkitBackdropFilter: hasBackdrop ? "blur(44px) saturate(2.1)" : "none",
       border: `0.5px solid ${border}`,
-      boxShadow: THEME.barShadow,
+      boxShadow: isPressingNav ? THEME.pressedBarShadow : THEME.barShadow,
+      transform: isPressingNav ? "translateY(1px) scale(0.997)" : "translateY(0) scale(1)",
       transition: reduceMotion
         ? "background 0.15s linear, border-color 0.15s linear"
-        : "background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease",
+        : "background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease, transform 0.22s ease",
       isolation: "isolate",
     };
-  }, [hasBackdrop, reduceMotion]);
+  }, [hasBackdrop, interaction.intensity, interaction.x, interaction.y, isPressingNav, reduceMotion]);
 
   const bubbleStyle = useMemo<React.CSSProperties>(() => {
+    const bubbleHighlightY = clamp(interaction.y - 8, 0, 100);
+    const glowStrength = clamp(0.82 + interaction.intensity * 0.16, 0.82, 1);
     return {
-      background: hasBackdrop ? THEME.bubbleBg : THEME.bubbleBgFallback,
+      background: hasBackdrop
+        ? `radial-gradient(136% 118% at ${interaction.x}% ${bubbleHighlightY}%, rgba(255,255,255,${glowStrength}), rgba(255,255,255,0.64) 48%, rgba(255,255,255,0.42) 100%)`
+        : THEME.bubbleBgFallback,
       backdropFilter: hasBackdrop ? "blur(26px) brightness(1.12) saturate(1.2)" : "none",
       WebkitBackdropFilter: hasBackdrop ? "blur(26px) brightness(1.12) saturate(1.2)" : "none",
       border: `0.5px solid ${THEME.bubbleBorder}`,
-      boxShadow: THEME.bubbleShadow,
+      boxShadow: isPressingNav
+        ? "0 4px 10px rgba(56,9,18,0.13), inset 0 1px 0 rgba(255,255,255,0.92)"
+        : THEME.bubbleShadow,
       willChange: "transform",
     };
-  }, [hasBackdrop]);
+  }, [hasBackdrop, interaction.intensity, interaction.x, interaction.y, isPressingNav]);
 
   const satelliteButtonStyle = useMemo<React.CSSProperties>(() => {
+    const satelliteGlow = clamp(0.2 + interaction.intensity * 0.22, 0.2, 0.42);
     return {
-      background: hasBackdrop ? "rgba(255,255,255,0.56)" : "rgba(246,246,248,0.94)",
+      background: hasBackdrop
+        ? `radial-gradient(120% 120% at ${interaction.x}% ${interaction.y}%, rgba(255,255,255,${satelliteGlow}), rgba(255,255,255,0.12) 64%, rgba(255,255,255,0.06) 100%), rgba(255,255,255,0.56)`
+        : "rgba(246,246,248,0.94)",
       backdropFilter: hasBackdrop ? "blur(34px) saturate(1.95)" : "none",
       WebkitBackdropFilter: hasBackdrop ? "blur(34px) saturate(1.95)" : "none",
       border: hasBackdrop
-        ? "0.5px solid rgba(188,149,91,0.26)"
+        ? isSatelliteActive
+          ? "0.6px solid rgba(171,23,56,0.34)"
+          : "0.5px solid rgba(188,149,91,0.26)"
         : "0.5px solid rgba(188,149,91,0.34)",
       boxShadow:
-        "0 10px 24px rgba(56,8,18,0.20), 0 2px 8px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.52)",
+        isPressingNav
+          ? "0 7px 16px rgba(56,8,18,0.18), 0 1px 5px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.52)"
+          : isSatelliteActive
+            ? THEME.activeSatelliteShadow
+            : "0 10px 24px rgba(56,8,18,0.20), 0 2px 8px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.52)",
     };
-  }, [hasBackdrop]);
+  }, [hasBackdrop, interaction.intensity, interaction.x, interaction.y, isPressingNav, isSatelliteActive]);
 
   const navCore = (
     <div
@@ -250,10 +356,33 @@ export function LiquidGlassNav({
       data-debug-nav-mode={layoutMode}
       className="relative flex items-center gap-0 rounded-full px-2 py-1 overflow-visible pointer-events-auto"
       style={navContainerStyle}
+      onPointerDown={(event) => {
+        setIsPressingNav(true);
+        setInteractionFromClientPoint(event.clientX, event.clientY, 1);
+      }}
+      onPointerMove={(event) => {
+        if (!isPressingNav && event.pointerType === "touch") return;
+        setInteractionFromClientPoint(event.clientX, event.clientY, isPressingNav ? 0.92 : 0.42);
+      }}
+      onPointerEnter={(event) => {
+        setInteractionFromClientPoint(event.clientX, event.clientY, 0.36);
+      }}
+      onPointerLeave={releaseInteraction}
+      onPointerUp={releaseInteraction}
+      onPointerCancel={releaseInteraction}
     >
       <div
         className="absolute inset-x-3 top-[2px] h-[45%] rounded-full pointer-events-none"
         style={{ background: hasBackdrop ? THEME.specularHighlight : THEME.fallbackTopHighlight }}
+      />
+      <div
+        className="absolute inset-0 rounded-full pointer-events-none"
+        style={{
+          background: `radial-gradient(160px 96px at ${interaction.x}% ${interaction.y}%, rgba(255,255,255,${0.14 + interaction.intensity * 0.2}), rgba(255,255,255,0) 74%)`,
+          opacity: hasBackdrop ? 1 : 0.6,
+          mixBlendMode: hasBackdrop ? "screen" : "normal",
+          transition: reduceMotion ? "opacity 0.12s linear" : "opacity 0.22s ease",
+        }}
       />
       {bubblePos && (
         <motion.div
@@ -324,6 +453,7 @@ export function LiquidGlassNav({
 
       {coreNavItems.map((item) => {
         const isActive = currentView === item.id;
+        const isPressed = pressedView === item.id;
         const Icon = item.icon;
 
         return (
@@ -334,8 +464,22 @@ export function LiquidGlassNav({
             onClick={() => onChangeView(item.id)}
             aria-label={item.label}
             aria-current={isActive ? "page" : undefined}
-            whileTap={reduceMotion ? undefined : { scale: 0.94, y: 1.1 }}
-            transition={reduceMotion ? { duration: 0.08 } : { type: "spring", stiffness: 540, damping: 30, mass: 0.6 }}
+            onPointerDown={(event) => {
+              setPressedView(item.id);
+              setIsPressingNav(true);
+              setInteractionFromClientPoint(event.clientX, event.clientY, 1);
+            }}
+            onPointerUp={() => {
+              setPressedView((prev) => (prev === item.id ? null : prev));
+            }}
+            onPointerLeave={() => {
+              setPressedView((prev) => (prev === item.id ? null : prev));
+            }}
+            onPointerCancel={() => {
+              setPressedView((prev) => (prev === item.id ? null : prev));
+            }}
+            whileTap={reduceMotion ? undefined : { scale: 0.91, y: 1.5 }}
+            transition={reduceMotion ? { duration: 0.08 } : { type: "spring", stiffness: 560, damping: 32, mass: 0.6 }}
             className="relative z-10 flex flex-1 flex-col items-center justify-center gap-1.5 rounded-[20px] py-3 min-h-[62px] overflow-visible"
           >
             <div
@@ -356,7 +500,9 @@ export function LiquidGlassNav({
               initial={false}
               animate={reduceMotion
                 ? { scale: 1, y: 0 }
-                : isActive
+                : isPressed
+                  ? { scale: 0.94, y: 1.1 }
+                  : isActive
                   ? { scale: 1.06, y: -1.1 }
                   : { scale: 1, y: 0 }}
               transition={reduceMotion ? { duration: 0.1 } : { type: "spring", stiffness: 360, damping: 24, mass: 0.6 }}
@@ -378,7 +524,9 @@ export function LiquidGlassNav({
               initial={false}
               animate={reduceMotion
                 ? { y: 0, opacity: 1 }
-                : isActive
+                : isPressed
+                  ? { y: 0.8, opacity: 0.92 }
+                  : isActive
                   ? { y: -0.8, opacity: 1 }
                   : { y: 0, opacity: 0.93 }}
               transition={reduceMotion ? { duration: 0.12 } : { type: "spring", stiffness: 380, damping: 28, mass: 0.58 }}
@@ -396,9 +544,6 @@ export function LiquidGlassNav({
     </div>
   );
 
-  const isSatelliteActive = currentView === satelliteNavItem.id;
-  const SatelliteIcon = satelliteNavItem.icon;
-
   const navShell = (
     <div className="flex items-end gap-2.5 px-0 pointer-events-none">
       <div className="flex-1 min-w-0 pointer-events-auto">{navCore}</div>
@@ -407,7 +552,24 @@ export function LiquidGlassNav({
         aria-label={satelliteNavItem.label}
         aria-current={isSatelliteActive ? "page" : undefined}
         onClick={() => onChangeView(satelliteNavItem.id)}
-        whileTap={reduceMotion ? undefined : { scale: 0.94, y: 0.8 }}
+        onPointerDown={(event) => {
+          setPressedView(satelliteNavItem.id);
+          setIsPressingNav(true);
+          setInteractionFromClientPoint(event.clientX, event.clientY, 1);
+        }}
+        onPointerUp={() => {
+          setPressedView((prev) => (prev === satelliteNavItem.id ? null : prev));
+          releaseInteraction();
+        }}
+        onPointerLeave={() => {
+          setPressedView((prev) => (prev === satelliteNavItem.id ? null : prev));
+          releaseInteraction();
+        }}
+        onPointerCancel={() => {
+          setPressedView((prev) => (prev === satelliteNavItem.id ? null : prev));
+          releaseInteraction();
+        }}
+        whileTap={reduceMotion ? undefined : { scale: 0.9, y: 1.2 }}
         transition={reduceMotion ? { duration: 0.08 } : { type: "spring", stiffness: 500, damping: 28, mass: 0.62 }}
         className="relative z-20 mb-1.5 h-[68px] w-[68px] shrink-0 rounded-full overflow-hidden pointer-events-auto"
         style={satelliteButtonStyle}
@@ -431,7 +593,9 @@ export function LiquidGlassNav({
           initial={false}
           animate={reduceMotion
             ? { scale: 1, y: 0 }
-            : isSatelliteActive
+            : pressedView === satelliteNavItem.id
+              ? { scale: 0.93, y: 1 }
+              : isSatelliteActive
               ? { scale: 1.06, y: -0.5 }
               : { scale: 1, y: 0 }}
           transition={reduceMotion ? { duration: 0.1 } : { type: "spring", stiffness: 380, damping: 24, mass: 0.6 }}
