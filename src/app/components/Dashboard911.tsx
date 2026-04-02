@@ -30,25 +30,25 @@ import {
   Check,
   Mic,
   FileText,
+  Bell,
 } from "lucide-react";
 import {
-  VoiceDescriptionInput,
-  buildActivityMessage,
-  type VoiceNote,
-} from "./VoiceDescriptionInput";
+  AudioRecorder911,
+  type AudioValue,
+} from "./AudioRecorder911";
 import {
   useState,
   useRef,
   useCallback,
   useEffect,
 } from "react";
-import { PushNotificationManager } from "./PushNotificationManager";
 import {
   createReport,
   saveReport,
   getSubmittedReports,
   fetchServerReports,
   type SubmittedReport,
+  type SubmittedAudioNote,
   type MediaItem,
 } from "./reportStore";
 import { getOperatorName } from "./Home911";
@@ -56,6 +56,10 @@ import { useNavigate } from "./RouterContext";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { PullToRefresh } from "./PullToRefresh";
+import {
+  ensurePushSubscriptionInBackground,
+  requestAndSubscribePush,
+} from "../lib/pushOnboarding";
 
 /* ─── Constants ─── */
 const TIPOS_EMERGENCIA = [
@@ -179,6 +183,47 @@ function composeAddress(a: {
   if (a.codigoPostal) parts.push(`C.P. ${a.codigoPostal}`);
   if (a.referencias) parts.push(`(${a.referencias})`);
   return parts.join(", ");
+}
+
+function composeDescriptionFromInputs(
+  writtenText: string,
+  voiceNotes: AudioValue[],
+): string {
+  const written = writtenText.trim();
+  const transcripts = voiceNotes
+    .map((note) => note.transcript.trim())
+    .filter((text) => text.length > 0);
+
+  if (written.length > 0) {
+    let merged = written;
+    for (const transcript of transcripts) {
+      if (merged.length >= 100) break;
+      if (!merged.toLowerCase().includes(transcript.toLowerCase())) {
+        merged = `${merged} ${transcript}`.trim();
+      }
+    }
+    return merged;
+  }
+
+  if (transcripts.length === 0) return "";
+  return transcripts.join(" • ");
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string" && reader.result.length > 0) {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("blob-to-dataurl-empty"));
+    };
+    reader.onerror = () => {
+      reject(reader.error || new Error("blob-to-dataurl-failed"));
+    };
+    reader.readAsDataURL(blob);
+  });
 }
 
 /* ─── Shared marker icon ─── */
@@ -584,13 +629,95 @@ function MiniMapPreview({
   );
 }
 
-/* ─── Tab type ─── */
-type TabId = "reportes" | "push";
+const PUSH_ONBOARDING_SEEN_KEY = "pc911.push-onboarding-seen-v1";
 
 /* ─── Main Component ─── */
 export function Dashboard911() {
-  const [activeTab, setActiveTab] = useState<TabId>("reportes");
   const [showSettings, setShowSettings] = useState(false);
+  const [showPushOnboarding, setShowPushOnboarding] = useState(false);
+  const [isEnrollingPush, setIsEnrollingPush] = useState(false);
+  const [pushFeedback, setPushFeedback] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const hasSeenOnboarding =
+      window.localStorage.getItem(PUSH_ONBOARDING_SEEN_KEY) ===
+      "1";
+    const canAskPermission =
+      "Notification" in window &&
+      Notification.permission === "default";
+
+    setShowPushOnboarding(
+      !hasSeenOnboarding && canAskPermission,
+    );
+
+    if (
+      "Notification" in window &&
+      Notification.permission === "granted"
+    ) {
+      void ensurePushSubscriptionInBackground();
+    }
+  }, []);
+
+  const markPushOnboardingSeen = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      PUSH_ONBOARDING_SEEN_KEY,
+      "1",
+    );
+  }, []);
+
+  const handleDismissPushOnboarding = useCallback(() => {
+    markPushOnboardingSeen();
+    setShowPushOnboarding(false);
+    setPushFeedback(null);
+  }, [markPushOnboardingSeen]);
+
+  const handleEnablePush = useCallback(async () => {
+    setIsEnrollingPush(true);
+    setPushFeedback(null);
+
+    try {
+      const result = await requestAndSubscribePush();
+      markPushOnboardingSeen();
+
+      if (result.ok) {
+        setPushFeedback("Notificaciones activadas correctamente.");
+        setShowPushOnboarding(false);
+        return;
+      }
+
+      switch (result.state) {
+        case "permission-denied":
+          setPushFeedback(
+            "Permiso denegado. Puedes activarlo desde Ajustes del navegador.",
+          );
+          break;
+        case "permission-dismissed":
+          setPushFeedback(
+            "No se concedió el permiso. Puedes intentarlo más tarde desde Ajustes.",
+          );
+          break;
+        case "unsupported":
+          setPushFeedback(
+            "Este dispositivo no soporta notificaciones push para esta app.",
+          );
+          break;
+        default:
+          setPushFeedback(
+            "No se pudo activar ahora. Inténtalo nuevamente más tarde.",
+          );
+          break;
+      }
+
+      setShowPushOnboarding(false);
+    } finally {
+      setIsEnrollingPush(false);
+    }
+  }, [markPushOnboardingSeen]);
 
   return (
     <>
@@ -612,50 +739,96 @@ export function Dashboard911() {
       <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
         <AppHeader title="Personal de Campo · 911" subtitle={getOperatorName()} showBack={false} onSettingsPress={() => setShowSettings(true)} />
 
-      <div
-        className="flex gap-1 mx-4 mt-3 mb-2 p-1 rounded-xl"
-        style={{ background: "#E5E5EA" }}
-      >
-        <button
-          onClick={() => setActiveTab("reportes")}
-          className="flex-1 py-2 rounded-lg text-[14px] transition-all"
-          style={{
-            background:
-              activeTab === "reportes"
-                ? "#FFFFFF"
-                : "transparent",
-            color:
-              activeTab === "reportes" ? "#AB1738" : "#636366",
-            fontWeight: activeTab === "reportes" ? 700 : 500,
-            boxShadow:
-              activeTab === "reportes"
-                ? "0 1px 3px rgba(0,0,0,0.1)"
-                : "none",
-          }}
-        >
-          Reportes 911
-        </button>
-        <button
-          onClick={() => setActiveTab("push")}
-          className="flex-1 py-2 rounded-lg text-[14px] transition-all"
-          style={{
-            background:
-              activeTab === "push" ? "#FFFFFF" : "transparent",
-            color: activeTab === "push" ? "#8B5CF6" : "#636366",
-            fontWeight: activeTab === "push" ? 700 : 500,
-            boxShadow:
-              activeTab === "push"
-                ? "0 1px 3px rgba(0,0,0,0.1)"
-                : "none",
-          }}
-        >
-          Notificaciones
-        </button>
-      </div>
+        {showPushOnboarding && (
+          <div
+            className="mx-4 mt-3 mb-2 rounded-2xl p-4"
+            style={{
+              background: "#FFFFFF",
+              border: "1px solid #E5E5EA",
+              boxShadow: "0 4px 16px rgba(28,28,30,0.08)",
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                style={{
+                  background: "rgba(171,23,56,0.1)",
+                }}
+              >
+                <Bell
+                  className="w-5 h-5 text-[#AB1738]"
+                  strokeWidth={2}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p
+                  className="text-[16px] text-[#1C1C1E]"
+                  style={{ fontWeight: 700, lineHeight: 1.2 }}
+                >
+                  Activa alertas en tiempo real
+                </p>
+                <p
+                  className="text-[13px] text-[#636366] mt-1"
+                  style={{ lineHeight: 1.35 }}
+                >
+                  Recibe notificaciones nuevas de reportes y
+                  actualizaciones operativas.
+                </p>
+              </div>
+            </div>
 
-      {activeTab === "reportes" && <ReportFormView />}
-      {activeTab === "push" && <PushNotificationManager />}
-    </div>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={handleDismissPushOnboarding}
+                className="flex-1 h-10 rounded-xl active:scale-[0.98] transition-transform"
+                style={{
+                  background: "#F2F2F7",
+                  color: "#636366",
+                  fontSize: 14,
+                  fontWeight: 700,
+                }}
+              >
+                Ahora no
+              </button>
+              <button
+                onClick={handleEnablePush}
+                disabled={isEnrollingPush}
+                className="flex-1 h-10 rounded-xl active:scale-[0.98] transition-transform disabled:opacity-60"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #AB1738, #8B1028)",
+                  color: "#FFFFFF",
+                  fontSize: 14,
+                  fontWeight: 800,
+                }}
+              >
+                {isEnrollingPush
+                  ? "Activando..."
+                  : "Activar"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!showPushOnboarding && pushFeedback && (
+          <div
+            className="mx-4 mt-3 mb-2 rounded-xl px-3 py-2"
+            style={{
+              background: "#FFFFFF",
+              border: "1px solid #E5E5EA",
+            }}
+          >
+            <p
+              className="text-[12px] text-[#636366]"
+              style={{ fontWeight: 500, lineHeight: 1.3 }}
+            >
+              {pushFeedback}
+            </p>
+          </div>
+        )}
+
+        <ReportFormView />
+      </div>
     </>
   );
 }
@@ -730,7 +903,7 @@ function ReportFormView() {
   const [tipoEmergencia, setTipoEmergencia] = useState("");
   const [municipio, setMunicipio] = useState("");
   const [descripcion, setDescripcion] = useState("");
-  const [voiceNotes, setVoiceNotes] = useState<VoiceNote[]>([]);
+  const [voiceNotes, setVoiceNotes] = useState<AudioValue[]>([]);
   const [prioridad, setPrioridad] = useState<
     "alta" | "media" | "baja"
   >("media");
@@ -1267,8 +1440,52 @@ function ReportFormView() {
 
     // ── Jerarquía de descripción: escrito → transcripciones de voz ──
     const finalDescripcion =
-      buildActivityMessage(descripcion, voiceNotes, "") ||
+      composeDescriptionFromInputs(descripcion, voiceNotes) ||
       "Sin descripción registrada.";
+
+    const audioNotesForReport: SubmittedAudioNote[] = (
+      await Promise.all(
+        voiceNotes.map(async (note) => {
+          let src = "";
+          try {
+            src = await blobToDataUrl(note.blob);
+          } catch (error) {
+            console.warn("[Dashboard911] No se pudo serializar nota de audio", {
+              noteId: note.id,
+              error,
+            });
+          }
+
+          const transcriptionStatus =
+            note.transcriptionStatus ||
+            (note.transcript.trim().length > 0
+              ? "done"
+              : src.length > 0
+                ? "pending"
+                : "error");
+
+          return {
+            id: note.id,
+            src,
+            mimeType:
+              note.mimeType ||
+              note.blob.type ||
+              "audio/webm",
+            transcript: note.transcript || "",
+            durationSec: note.durationSec,
+            transcriptionStatus,
+            transcriptionError:
+              src.length > 0
+                ? note.transcriptionError ?? null
+                : note.transcriptionError || "audio-encode-failed",
+            transcribedAt: note.transcribedAt ?? null,
+          };
+        }),
+      )
+    ).filter(
+      (note) =>
+        note.src.length > 0 || note.transcript.trim().length > 0,
+    );
 
     const report = createReport({
       tipoEmergencia,
@@ -1278,6 +1495,7 @@ function ReportFormView() {
       descripcion: finalDescripcion,
       prioridad,
       mediaItems,
+      audioNotes: audioNotesForReport,
       lat:
         gpsSource === "gps" ||
         gpsSource === "search" ||
@@ -1770,12 +1988,96 @@ function ReportFormView() {
                   </div>
                 </div>
 
-                <VoiceDescriptionInput
-                  writtenText={descripcion}
-                  onWrittenTextChange={setDescripcion}
-                  voiceNotes={voiceNotes}
-                  onVoiceNotesChange={setVoiceNotes}
-                />
+                <div className="space-y-4">
+                  <div
+                    className="relative rounded-[24px] p-4 overflow-hidden"
+                    style={{
+                      background:
+                        "linear-gradient(150deg, rgba(255,255,255,0.88), rgba(246,246,249,0.74))",
+                      border: "1px solid rgba(255,255,255,0.7)",
+                      boxShadow:
+                        "0 20px 50px rgba(15,23,42,0.12), inset 0 1px 0 rgba(255,255,255,0.9)",
+                      backdropFilter: "blur(16px) saturate(1.35)",
+                      WebkitBackdropFilter:
+                        "blur(16px) saturate(1.35)",
+                    }}
+                  >
+                    <div
+                      className="pointer-events-none absolute left-3 right-3 top-0 h-8 rounded-b-[18px]"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, rgba(255,255,255,0.7), rgba(255,255,255,0))",
+                      }}
+                    />
+                    <p
+                      className="text-[#1C1C1E] mb-2.5"
+                      style={{ fontSize: 16, fontWeight: 700 }}
+                    >
+                      Descripción escrita
+                    </p>
+                    <textarea
+                      value={descripcion}
+                      onChange={(event) =>
+                        setDescripcion(event.target.value)
+                      }
+                      placeholder="¿Qué ocurrió en campo?"
+                      rows={4}
+                      data-no-swipe=""
+                      className="w-full rounded-2xl px-4 py-4 resize-none outline-none"
+                      style={{
+                        fontSize: 17,
+                        lineHeight: 1.55,
+                        color: "#1C1C1E",
+                        background:
+                          "linear-gradient(150deg, rgba(255,255,255,0.88), rgba(246,246,249,0.76))",
+                        border: descripcion.trim()
+                          ? "1.5px solid rgba(171,23,56,0.4)"
+                          : "1.5px solid rgba(209,209,214,0.8)",
+                        boxShadow:
+                          "inset 0 1px 0 rgba(255,255,255,0.75), 0 8px 22px rgba(15,23,42,0.07)",
+                        backdropFilter:
+                          "blur(10px) saturate(1.2)",
+                        WebkitBackdropFilter:
+                          "blur(10px) saturate(1.2)",
+                        transition:
+                          "border-color 0.15s ease, box-shadow 0.15s ease",
+                      }}
+                    />
+                    <p
+                      className="mt-2 text-[#8E8E93]"
+                      style={{ fontSize: 12, fontWeight: 600 }}
+                    >
+                      Puedes escribir, dictar o combinar ambas.
+                    </p>
+                  </div>
+
+                  <div
+                    className="relative rounded-[24px] p-3 overflow-hidden"
+                    style={{
+                      background:
+                        "linear-gradient(155deg, rgba(255,255,255,0.78), rgba(240,240,246,0.62))",
+                      border: "1px solid rgba(255,255,255,0.65)",
+                      boxShadow:
+                        "0 20px 45px rgba(15,23,42,0.12), inset 0 1px 0 rgba(255,255,255,0.86)",
+                      backdropFilter: "blur(18px) saturate(1.38)",
+                      WebkitBackdropFilter:
+                        "blur(18px) saturate(1.38)",
+                    }}
+                  >
+                    <div
+                      className="pointer-events-none absolute left-3 right-3 top-0 h-8 rounded-b-[18px]"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0))",
+                      }}
+                    />
+                    <AudioRecorder911
+                      values={voiceNotes}
+                      onChange={setVoiceNotes}
+                      maxNotes={5}
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Nav */}
@@ -1837,7 +2139,7 @@ function ReportFormView() {
                   {(descripcion.trim() || voiceNotes.length > 0) && (
                     <div className="mt-2 pt-2 border-t border-[#E5E5EA]">
                       <p style={{ fontSize: 13, color: "#3A3A3C", lineHeight: 1.5 }}>
-                        {descripcion.trim() || (voiceNotes[0]?.transcription ? `"${voiceNotes[0].transcription.slice(0, 80)}…"` : "—")}
+                        {descripcion.trim() || (voiceNotes[0]?.transcript ? `"${voiceNotes[0].transcript.slice(0, 80)}…"` : "—")}
                       </p>
                       {voiceNotes.length > 0 && (
                         <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-md" style={{ fontSize: 12, fontWeight: 700, background: "rgba(171,23,56,0.08)", color: "#AB1738" }}>

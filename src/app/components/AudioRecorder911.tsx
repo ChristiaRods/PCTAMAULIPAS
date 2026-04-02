@@ -579,31 +579,63 @@ export function AudioRecorder911({
           : canAddMore
             ? "Manten presionado para dictar"
             : `Limite alcanzado (${maxNotes})`;
+  const notesCounter = `${values.length}/${maxNotes}`;
+
+  const liquidShell = {
+    background: "linear-gradient(150deg, rgba(255,255,255,0.34), rgba(255,255,255,0.14))",
+    border: "1px solid rgba(255,255,255,0.42)",
+    boxShadow: "0 24px 60px rgba(15,23,42,0.28), inset 0 1px 0 rgba(255,255,255,0.5)",
+    backdropFilter: "blur(22px) saturate(1.5)",
+    WebkitBackdropFilter: "blur(22px) saturate(1.5)",
+  } as const;
+
+  const liquidInner = {
+    background: "linear-gradient(160deg, rgba(255,255,255,0.68), rgba(244,244,248,0.54))",
+    border: "1px solid rgba(255,255,255,0.72)",
+    boxShadow: "0 18px 45px rgba(15,23,42,0.2), inset 0 1px 0 rgba(255,255,255,0.8)",
+    backdropFilter: "blur(18px) saturate(1.35)",
+    WebkitBackdropFilter: "blur(18px) saturate(1.35)",
+  } as const;
 
   return (
     <div className="mt-2 space-y-2">
       <button
         onClick={openComposer}
         type="button"
-        className="w-full rounded-xl px-4 py-3 text-left"
+        className="relative w-full rounded-2xl px-4 py-3 text-left overflow-hidden"
         style={{
-          background: "linear-gradient(135deg, rgba(171,23,56,0.1), rgba(139,16,40,0.08))",
-          border: "1px solid rgba(171,23,56,0.18)",
+          background: "linear-gradient(135deg, rgba(255,255,255,0.86), rgba(244,244,248,0.72))",
+          border: "1px solid rgba(255,255,255,0.76)",
+          boxShadow: "0 14px 32px rgba(15,23,42,0.1), inset 0 1px 0 rgba(255,255,255,0.92)",
+          backdropFilter: "blur(14px) saturate(1.28)",
+          WebkitBackdropFilter: "blur(14px) saturate(1.28)",
         }}
       >
+        <div
+          className="pointer-events-none absolute left-3 right-3 top-0 h-7 rounded-b-2xl"
+          style={{
+            background: "linear-gradient(180deg, rgba(255,255,255,0.84), rgba(255,255,255,0))",
+          }}
+        />
         <p className="text-[15px] text-[#AB1738]" style={{ fontWeight: 700 }}>
           Dictar evidencias del reporte
         </p>
-        <p className="text-[12px] text-[#8E8E93] mt-0.5">
+        <p className="text-[12px] text-[#636366] mt-0.5">
           Abre la modal de voz para grabar, transcribir y revisar notas.
         </p>
       </button>
 
       <div
-        className="rounded-xl border bg-white px-3 py-2.5 space-y-2"
-        style={{ borderColor: "#E5E5EA" }}
+        className="relative rounded-2xl px-3 py-2.5 space-y-2 overflow-hidden"
+        style={liquidInner}
       >
-        <p className="text-[12px] text-[#6E6E73]" style={{ fontWeight: 700 }}>
+        <div
+          className="pointer-events-none absolute left-3 right-3 top-0 h-7 rounded-b-2xl"
+          style={{
+            background: "linear-gradient(180deg, rgba(255,255,255,0.84), rgba(255,255,255,0))",
+          }}
+        />
+        <p className="text-[12px] text-[#3A3A3C]" style={{ fontWeight: 700 }}>
           Notas de voz cargadas ({values.length})
         </p>
         {values.length === 0 ? (
@@ -615,7 +647,10 @@ export function AudioRecorder911({
               <div
                 key={note.id}
                 className="rounded-lg border px-2.5 py-2"
-                style={{ borderColor: "#ECECEF", background: "#FCFCFD" }}
+                style={{
+                  borderColor: "rgba(255,255,255,0.85)",
+                  background: "linear-gradient(150deg, rgba(255,255,255,0.9), rgba(248,248,250,0.78))",
+                }}
               >
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[13px] text-[#1C1C1E]" style={{ fontWeight: 700 }}>
@@ -657,31 +692,87 @@ export function AudioRecorder911({
 
       {isModalOpen && typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[2147483000]" role="dialog" aria-modal="true">
-            <div className="absolute inset-0 bg-black/72 backdrop-blur-[4px]" />
+          <div className="fixed inset-0 z-[2147483000] overflow-hidden" role="dialog" aria-modal="true">
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  "radial-gradient(120% 100% at 20% 10%, rgba(171,23,56,0.38), rgba(14,16,25,0.94) 58%), radial-gradient(90% 70% at 85% 18%, rgba(188,149,91,0.18), rgba(7,10,18,0) 62%)",
+              }}
+            />
+            <div
+              className="pointer-events-none absolute -left-20 top-[16%] w-72 h-72 rounded-full blur-3xl"
+              style={{ background: "rgba(171,23,56,0.22)" }}
+            />
+            <div
+              className="pointer-events-none absolute -right-14 top-[6%] w-64 h-64 rounded-full blur-3xl"
+              style={{ background: "rgba(255,255,255,0.16)" }}
+            />
+            <div className="absolute inset-0 bg-black/42 backdrop-blur-[6px]" />
 
             <div className="absolute inset-0 flex flex-col" style={{ userSelect: "none", WebkitUserSelect: "none" }}>
-              <div className="flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top)+10px)]">
-                <p className="text-white text-[14px]" style={{ fontWeight: 700 }}>
-                  Evidencias por voz
-                </p>
-                <button
-                  onClick={closeComposer}
-                  type="button"
-                  className="px-3 py-1.5 rounded-full text-[13px] text-white"
-                  style={{
-                    background: "rgba(255,255,255,0.12)",
-                    border: "1px solid rgba(255,255,255,0.28)",
-                    backdropFilter: "blur(12px)",
-                  }}
+              <div className="px-4 pt-[calc(env(safe-area-inset-top)+8px)] pb-2">
+                <div
+                  className="relative mx-auto w-full max-w-[560px] rounded-[24px] px-3 py-2.5 overflow-hidden"
+                  style={liquidShell}
                 >
-                  Guardar
-                </button>
+                  <div
+                    className="pointer-events-none absolute left-3 right-3 top-0 h-8 rounded-b-[16px]"
+                    style={{
+                      background: "linear-gradient(180deg, rgba(255,255,255,0.65), rgba(255,255,255,0))",
+                    }}
+                  />
+                  <div className="relative z-[1] flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-white text-[15px] leading-tight" style={{ fontWeight: 700 }}>
+                        Evidencias por voz
+                      </p>
+                      <p className="text-white/75 text-[11px] mt-0.5" style={{ fontWeight: 600 }}>
+                        Manten presionado para grabar
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="px-2.5 py-1 rounded-full text-[11px] text-white"
+                        style={{
+                          background: "rgba(255,255,255,0.15)",
+                          border: "1px solid rgba(255,255,255,0.35)",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {notesCounter}
+                      </span>
+                      <button
+                        onClick={closeComposer}
+                        type="button"
+                        className="px-3 py-1.5 rounded-full text-[13px] text-white"
+                        style={{
+                          background: "rgba(255,255,255,0.16)",
+                          border: "1px solid rgba(255,255,255,0.36)",
+                          backdropFilter: "blur(12px)",
+                          WebkitBackdropFilter: "blur(12px)",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Guardar
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="px-5 pt-4">
-                <div className="min-h-[72px]">
-                  <p className="text-white text-[18px] leading-[1.25]" style={{ fontWeight: 700 }}>
+              <div className="px-4 pt-1">
+                <div
+                  className="relative mx-auto w-full max-w-[560px] min-h-[84px] rounded-[24px] px-4 py-3 overflow-hidden"
+                  style={liquidInner}
+                >
+                  <div
+                    className="pointer-events-none absolute left-3 right-3 top-0 h-7 rounded-b-[16px]"
+                    style={{
+                      background: "linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0))",
+                    }}
+                  />
+                  <p className="relative z-[1] text-[#1C1C1E] text-[18px] leading-[1.25]" style={{ fontWeight: 700 }}>
                     {displayTranscript ||
                       (isRecording
                         ? "Escuchando tu dictado..."
@@ -690,8 +781,17 @@ export function AudioRecorder911({
                 </div>
               </div>
 
-              <div className="px-4 pt-1 pb-2 flex justify-center">
-                <div className="w-full max-w-[460px] flex flex-col items-center">
+              <div className="px-4 pt-3 pb-2 flex justify-center">
+                <div
+                  className="relative w-full max-w-[560px] rounded-[30px] p-4 flex flex-col items-center overflow-hidden"
+                  style={liquidShell}
+                >
+                  <div
+                    className="pointer-events-none absolute left-4 right-4 top-0 h-8 rounded-b-[18px]"
+                    style={{
+                      background: "linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0))",
+                    }}
+                  />
                   <button
                     type="button"
                     onPointerDown={startPressRecording}
@@ -700,18 +800,21 @@ export function AudioRecorder911({
                     onContextMenu={(event) => event.preventDefault()}
                     onDragStart={(event) => event.preventDefault()}
                     disabled={!isMicSupported || !canAddMore || isRequestingPermission}
-                    className="rounded-full flex items-center justify-center shadow-2xl"
+                    className="relative z-[1] rounded-full flex items-center justify-center shadow-2xl"
                     style={{
-                      width: 108,
-                      height: 108,
-                      border: "1px solid rgba(255,255,255,0.45)",
+                      width: 112,
+                      height: 112,
+                      border: "1px solid rgba(255,255,255,0.46)",
                       background:
                         isRecording || isRecordButtonPressed
-                          ? `linear-gradient(150deg, ${GUINDO_DARK}, ${GUINDO})`
-                          : `linear-gradient(150deg, ${GUINDO}, ${GUINDO_DARK})`,
-                      transform: isRecordButtonPressed ? "scale(0.94) translateY(2px)" : "scale(1)",
-                      transition: "transform 120ms ease, filter 180ms ease",
-                      filter: isRecording ? "saturate(1.15) brightness(1.05)" : "none",
+                          ? `linear-gradient(155deg, ${GUINDO_DARK}, ${GUINDO})`
+                          : `linear-gradient(155deg, ${GUINDO}, ${GUINDO_DARK})`,
+                      transform: isRecordButtonPressed ? "scale(0.93) translateY(2px)" : "scale(1)",
+                      transition: "transform 120ms ease, filter 180ms ease, box-shadow 180ms ease",
+                      filter: isRecording ? "saturate(1.15) brightness(1.07)" : "none",
+                      boxShadow: isRecording
+                        ? "0 18px 38px rgba(171,23,56,0.45), inset 0 1px 0 rgba(255,255,255,0.35)"
+                        : "0 14px 30px rgba(17,24,39,0.4), inset 0 1px 0 rgba(255,255,255,0.25)",
                       touchAction: "none",
                       userSelect: "none",
                       WebkitUserSelect: "none",
@@ -726,7 +829,7 @@ export function AudioRecorder911({
                     )}
                   </button>
 
-                  <p className="mt-2.5 text-center text-white/90 text-[12px]" style={{ fontWeight: 600 }}>
+                  <p className="relative z-[1] mt-3 text-center text-white/92 text-[12px]" style={{ fontWeight: 600 }}>
                     {statusCopy}
                   </p>
                 </div>
@@ -734,24 +837,34 @@ export function AudioRecorder911({
 
               <div className="flex-1 min-h-0 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)]">
                 <div
-                  className="rounded-[28px] border h-full overflow-y-auto"
-                  style={{
-                    background: "rgba(245,245,247,0.96)",
-                    borderColor: "rgba(255,255,255,0.5)",
-                    backdropFilter: "blur(18px)",
-                    WebkitBackdropFilter: "blur(18px)",
-                  }}
+                  className="relative mx-auto w-full max-w-[560px] rounded-[30px] h-full overflow-hidden flex flex-col"
+                  style={liquidShell}
                 >
-                  <div className="px-4 pt-4 pb-3">
-                    <p className="text-[13px] text-[#6E6E73]" style={{ fontWeight: 600 }}>
-                      Notas guardadas: {values.length}
+                  <div
+                    className="pointer-events-none absolute left-4 right-4 top-0 h-9 rounded-b-[20px]"
+                    style={{
+                      background: "linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0))",
+                    }}
+                  />
+                  <div className="relative z-[1] px-4 pt-4 pb-3 border-b border-white/35 flex items-center justify-between gap-2">
+                    <p className="text-[13px] text-white/88" style={{ fontWeight: 700 }}>
+                      Notas guardadas
                     </p>
+                    <span className="text-[11px] text-white/85" style={{ fontWeight: 700 }}>
+                      {notesCounter}
+                    </span>
                   </div>
 
-                  <div className="px-3 pb-3 space-y-2.5">
+                  <div className="relative z-[1] px-3 pb-3 pt-3 space-y-2.5 flex-1 min-h-0 overflow-y-auto">
                     {values.length === 0 ? (
-                      <div className="rounded-xl bg-white px-3 py-3 border border-[#E5E5EA]">
-                        <p className="text-[13px] text-[#8E8E93]">
+                      <div
+                        className="rounded-xl px-3 py-3 border"
+                        style={{
+                          background: "linear-gradient(150deg, rgba(255,255,255,0.8), rgba(246,246,249,0.66))",
+                          borderColor: "rgba(255,255,255,0.7)",
+                        }}
+                      >
+                        <p className="text-[13px] text-[#636366]">
                           Aun no hay notas. Mantener presionado el boton central para empezar.
                         </p>
                       </div>
@@ -761,12 +874,17 @@ export function AudioRecorder911({
                         return (
                           <div
                             key={note.id}
-                            className="rounded-xl p-3 bg-white border border-[#E5E5EA]"
+                            className="rounded-xl p-3 border"
+                            style={{
+                              background: "linear-gradient(150deg, rgba(255,255,255,0.88), rgba(247,247,250,0.72))",
+                              borderColor: "rgba(255,255,255,0.78)",
+                              boxShadow: "0 10px 22px rgba(15,23,42,0.12)",
+                            }}
                           >
                             <div className="flex items-center gap-2 mb-2">
                               <div
                                 className="w-7 h-7 rounded-full flex items-center justify-center"
-                                style={{ background: "rgba(171,23,56,0.1)" }}
+                                style={{ background: "rgba(171,23,56,0.12)" }}
                               >
                                 <Mic className="w-3.5 h-3.5 text-[#AB1738]" strokeWidth={2} />
                               </div>
@@ -776,13 +894,13 @@ export function AudioRecorder911({
                                     ? `Descripcion del reporte ${idx + 1}`
                                     : "Descripcion del reporte"}
                                 </p>
-                                <p className="text-[12px] text-[#8E8E93]">Duracion: {formatTime(note.durationSec)}</p>
+                                <p className="text-[12px] text-[#6E6E73]">Duracion: {formatTime(note.durationSec)}</p>
                               </div>
                               <button
                                 onClick={() => deleteNote(note.id)}
                                 type="button"
                                 className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg active:opacity-60"
-                                style={{ background: "rgba(220,38,38,0.08)", minHeight: 38 }}
+                                style={{ background: "rgba(220,38,38,0.09)", minHeight: 38 }}
                               >
                                 <Trash2 className="w-3.5 h-3.5 text-[#DC2626]" strokeWidth={1.8} />
                                 <span className="text-[12px] text-[#DC2626]" style={{ fontWeight: 700 }}>
@@ -795,7 +913,13 @@ export function AudioRecorder911({
                               <audio controls preload="metadata" src={audioUrl} className="w-full h-9 mb-2" />
                             )}
 
-                            <div className="rounded-lg px-2.5 py-2 border border-[#E5E5EA] bg-[#FCFCFD]">
+                            <div
+                              className="rounded-lg px-2.5 py-2 border"
+                              style={{
+                                borderColor: "rgba(209,209,214,0.84)",
+                                background: "linear-gradient(150deg, rgba(252,252,253,0.95), rgba(248,248,251,0.8))",
+                              }}
+                            >
                               <p
                                 className="text-[11px] text-[#8E8E93] mb-1 uppercase tracking-wider"
                                 style={{ fontWeight: 700 }}
@@ -811,14 +935,14 @@ export function AudioRecorder911({
                                 note.transcriptionStatus === "processing" ? (
                                 <div className="flex items-start gap-2">
                                   <AlertTriangle className="w-3.5 h-3.5 text-[#A16207] shrink-0 mt-0.5" strokeWidth={2} />
-                                  <p className="text-[12px] text-[#8E8E93] italic">
+                                  <p className="text-[12px] text-[#6E6E73] italic">
                                     Transcripcion en proceso. El audio ya quedo guardado.
                                   </p>
                                 </div>
                               ) : (
                                 <div className="flex items-start gap-2">
                                   <AlertTriangle className="w-3.5 h-3.5 text-[#F59E0B] shrink-0 mt-0.5" strokeWidth={2} />
-                                  <p className="text-[12px] text-[#8E8E93] italic">
+                                  <p className="text-[12px] text-[#6E6E73] italic">
                                     Sin transcripcion. El audio se enviara igualmente.
                                   </p>
                                 </div>
