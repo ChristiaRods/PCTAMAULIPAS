@@ -650,6 +650,8 @@ function NotificationsView({
     if (!tag) return { bg: "linear-gradient(135deg, #AB1738, #D4214A)", icon: Bell, label: "Alerta" };
     if (tag === "test-notification") return { bg: "linear-gradient(135deg, #3B82F6, #60A5FA)", icon: Megaphone, label: "Prueba" };
     if (tag === "custom-alert") return { bg: "linear-gradient(135deg, #AB1738, #D4214A)", icon: AlertTriangle, label: "Alerta" };
+    if (tag === "incident-update") return { bg: "linear-gradient(135deg, #F59E0B, #D97706)", icon: Info, label: "Actualización" };
+    if (tag === "system-notice") return { bg: "linear-gradient(135deg, #6B7280, #4B5563)", icon: Megaphone, label: "Comunicado" };
     if (tag.startsWith("report-")) return { bg: "linear-gradient(135deg, #DC2626, #EF4444)", icon: AlertTriangle, label: "Reporte 911" };
     return { bg: "linear-gradient(135deg, #BC955B, #D4AB6E)", icon: Bell, label: "General" };
   };
@@ -680,7 +682,7 @@ function NotificationsView({
 
   /* Filter server notifs by category preference */
   const filterServerNotif = (n: ServerNotification): boolean => {
-    const isReport = n.tag?.startsWith("report-") || !!n.linkedReportId;
+    const isReport = n.tag?.startsWith("report-") || n.tag === "incident-update" || !!n.linkedReportId;
     if (isReport && !prefs.reportes911) return false;
     // Server notifs don't have explicit priority, show them unless category is off
     return true;

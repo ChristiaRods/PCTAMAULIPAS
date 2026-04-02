@@ -48,6 +48,11 @@ interface StatusInfo {
   icon: React.ElementType;
 }
 
+type PushTemplateType =
+  | "new_report"
+  | "incident_update"
+  | "system_notice";
+
 const STATUS_MAP: Record<PushStatus, StatusInfo> = {
   unsupported: {
     label: "No soportado",
@@ -471,7 +476,7 @@ export function PushNotificationManager() {
       addLog("ðŸš€ Enviando notificaciÃ³n local de prueba...");
       // Small delay to feel more realistic
       await new Promise((r) => setTimeout(r, 500));
-      const ok = sendLocalNotification("Prueba de notificaciones", "Proteccion Civil Tamaulipas: si ves este mensaje, el canal local esta activo.");
+      const ok = sendLocalNotification("Prueba de notificaciones", "Si ves este mensaje, el canal local esta activo.");
       if (ok) {
         setTestResult({
           success: true,
@@ -526,6 +531,154 @@ export function PushNotificationManager() {
       setSendingTest(false);
     }
   }, [addLog, sendLocalNotification]);
+
+  /* ─── Template variants (3 agreed push formats) ─── */
+  const [templateType, setTemplateType] =
+    useState<PushTemplateType>("new_report");
+  const [templateEmergency, setTemplateEmergency] =
+    useState("Incendio Estructural");
+  const [templatePriority, setTemplatePriority] =
+    useState<"alta" | "media" | "baja">("media");
+  const [templateLocation, setTemplateLocation] = useState(
+    "Ciudad Victoria, Tamaulipas",
+  );
+  const [templateSnippet, setTemplateSnippet] = useState(
+    "Pendiente de captura por personal en campo.",
+  );
+  const [templateChange, setTemplateChange] = useState(
+    "Estatus actualizado por operador regional.",
+  );
+  const [templateSystemTitle, setTemplateSystemTitle] = useState(
+    "Comunicado operativo",
+  );
+  const [templateSystemBody, setTemplateSystemBody] = useState(
+    "Se mantiene monitoreo preventivo en las zonas de riesgo.",
+  );
+  const [sendingTemplate, setSendingTemplate] = useState(false);
+
+  const buildTemplatePreview = useCallback(() => {
+    const normalize = (value: string) => value.trim().replace(/\s+/g, " ");
+    const location = normalize(templateLocation);
+    const snippet = normalize(templateSnippet);
+
+    if (templateType === "new_report") {
+      const title = `${normalize(templateEmergency) || "Emergencia"} - Prioridad ${templatePriority === "alta" ? "Alta" : templatePriority === "baja" ? "Baja" : "Media"}`;
+      const body = location && snippet
+        ? snippet.toLowerCase().startsWith(location.toLowerCase())
+          ? snippet
+          : `${location}. ${snippet}`
+        : snippet || location || "Nuevo reporte recibido.";
+      return { title, body };
+    }
+
+    if (templateType === "incident_update") {
+      const title = `${normalize(templateEmergency) || "Emergencia"} - Actualizacion`;
+      const change = normalize(templateChange) || "Se registró una actualización del incidente.";
+      const withLocation = location && !change.toLowerCase().includes(location.toLowerCase())
+        ? `${change} ${location}.`
+        : change;
+      const body = snippet && !withLocation.toLowerCase().includes(snippet.toLowerCase())
+        ? `${withLocation} ${snippet}`
+        : withLocation;
+      return { title, body };
+    }
+
+    return {
+      title: normalize(templateSystemTitle) || "Comunicado operativo",
+      body:
+        normalize(templateSystemBody) ||
+        "Hay una actualización del sistema.",
+    };
+  }, [
+    templateType,
+    templateEmergency,
+    templatePriority,
+    templateLocation,
+    templateSnippet,
+    templateChange,
+    templateSystemTitle,
+    templateSystemBody,
+  ]);
+
+  const sendTemplateNotification = useCallback(async () => {
+    setSendingTemplate(true);
+    setTestResult(null);
+
+    const preview = buildTemplatePreview();
+    addLog(`📤 Enviando plantilla ${templateType}: "${preview.title}"`);
+
+    if (demoModeRef.current) {
+      await new Promise((r) => setTimeout(r, 450));
+      const ok = sendLocalNotification(preview.title, preview.body);
+      if (ok) {
+        setTestResult({
+          success: true,
+          message: "✅ Plantilla local enviada",
+        });
+        addLog("✅ Plantilla local mostrada");
+      } else {
+        setTestResult({
+          success: false,
+          message: "❌ No se pudo mostrar la plantilla local",
+        });
+        addLog("❌ Error mostrando plantilla local");
+      }
+      setSendingTemplate(false);
+      return;
+    }
+
+    try {
+      const payload = {
+        templateType,
+        tipoEmergencia: templateEmergency,
+        prioridad: templatePriority,
+        ubicacion: templateLocation,
+        extracto: templateSnippet,
+        cambio: templateChange,
+        title: templateSystemTitle,
+        message: templateSystemBody,
+      };
+
+      const res = await fetch(`${API_BASE}/push/send`, {
+        method: "POST",
+        headers: apiHeaders,
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (data.sent > 0) {
+        setTestResult({
+          success: true,
+          message: `✅ Plantilla enviada a ${data.sent} dispositivo(s)`,
+        });
+        addLog(`✅ Plantilla enviada: ${data.sent}/${data.total}`);
+      } else {
+        setTestResult({
+          success: false,
+          message: data.error || "Falló el envío de plantilla",
+        });
+        addLog(`❌ Fallo plantilla: ${data.error || JSON.stringify(data.errors?.[0])}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setTestResult({ success: false, message: msg });
+      addLog(`❌ Error de red (plantilla): ${msg}`);
+    } finally {
+      setSendingTemplate(false);
+    }
+  }, [
+    addLog,
+    buildTemplatePreview,
+    sendLocalNotification,
+    templateType,
+    templateEmergency,
+    templatePriority,
+    templateLocation,
+    templateSnippet,
+    templateChange,
+    templateSystemTitle,
+    templateSystemBody,
+  ]);
 
   /* â”€â”€â”€ Send custom notification â”€â”€â”€ */
   const [customTitle, setCustomTitle] = useState("Alerta meteorologica");
@@ -1000,6 +1153,221 @@ export function PushNotificationManager() {
                     </p>
                   </div>
                 )}
+              </div>
+
+              {/* Template variants */}
+              <div
+                className="rounded-2xl p-4 mb-3"
+                style={{
+                  background: "#FFFFFF",
+                  border: "1px solid #E5E5EA",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                }}
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <p
+                    className="text-[15px] text-[#1C1C1E]"
+                    style={{ fontWeight: 600 }}
+                  >
+                    Plantillas Push (3 variantes)
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {[
+                    { id: "new_report", label: "Nueva alerta" },
+                    { id: "incident_update", label: "Actualización" },
+                    { id: "system_notice", label: "Sistema" },
+                  ].map((item) => {
+                    const active = templateType === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() =>
+                          setTemplateType(item.id as PushTemplateType)
+                        }
+                        className="px-2 py-2 rounded-xl text-[12px] transition-colors"
+                        style={{
+                          background: active
+                            ? "rgba(171,23,56,0.12)"
+                            : "#F2F2F7",
+                          border: `1px solid ${active ? "rgba(171,23,56,0.35)" : "#E5E5EA"}`,
+                          color: active ? "#AB1738" : "#636366",
+                          fontWeight: active ? 700 : 600,
+                        }}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {(templateType === "new_report" ||
+                  templateType === "incident_update") && (
+                  <div className="flex flex-col gap-2 mb-3">
+                    <input
+                      value={templateEmergency}
+                      onChange={(e) =>
+                        setTemplateEmergency(e.target.value)
+                      }
+                      placeholder="Tipo de emergencia"
+                      className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
+                      style={{
+                        background: "#F2F2F7",
+                        border: "1px solid #E5E5EA",
+                      }}
+                    />
+                    {templateType === "new_report" && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: "alta", label: "Alta" },
+                          { id: "media", label: "Media" },
+                          { id: "baja", label: "Baja" },
+                        ].map((item) => {
+                          const active = templatePriority === item.id;
+                          return (
+                            <button
+                              key={item.id}
+                              onClick={() =>
+                                setTemplatePriority(
+                                  item.id as "alta" | "media" | "baja",
+                                )
+                              }
+                              className="px-2 py-2 rounded-xl text-[12px]"
+                              style={{
+                                background: active
+                                  ? "rgba(188,149,91,0.16)"
+                                  : "#F2F2F7",
+                                border: `1px solid ${active ? "rgba(188,149,91,0.45)" : "#E5E5EA"}`,
+                                color: active ? "#A07C48" : "#636366",
+                                fontWeight: active ? 700 : 600,
+                              }}
+                            >
+                              {item.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <input
+                      value={templateLocation}
+                      onChange={(e) =>
+                        setTemplateLocation(e.target.value)
+                      }
+                      placeholder="Ubicación"
+                      className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
+                      style={{
+                        background: "#F2F2F7",
+                        border: "1px solid #E5E5EA",
+                      }}
+                    />
+                    {templateType === "incident_update" && (
+                      <input
+                        value={templateChange}
+                        onChange={(e) =>
+                          setTemplateChange(e.target.value)
+                        }
+                        placeholder="Qué cambió"
+                        className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
+                        style={{
+                          background: "#F2F2F7",
+                          border: "1px solid #E5E5EA",
+                        }}
+                      />
+                    )}
+                    <textarea
+                      value={templateSnippet}
+                      onChange={(e) =>
+                        setTemplateSnippet(e.target.value)
+                      }
+                      placeholder="Extracto del reporte"
+                      rows={3}
+                      className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none resize-none"
+                      style={{
+                        background: "#F2F2F7",
+                        border: "1px solid #E5E5EA",
+                      }}
+                    />
+                  </div>
+                )}
+
+                {templateType === "system_notice" && (
+                  <div className="flex flex-col gap-2 mb-3">
+                    <input
+                      value={templateSystemTitle}
+                      onChange={(e) =>
+                        setTemplateSystemTitle(e.target.value)
+                      }
+                      placeholder="Título del comunicado"
+                      className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
+                      style={{
+                        background: "#F2F2F7",
+                        border: "1px solid #E5E5EA",
+                      }}
+                    />
+                    <textarea
+                      value={templateSystemBody}
+                      onChange={(e) =>
+                        setTemplateSystemBody(e.target.value)
+                      }
+                      placeholder="Mensaje del comunicado"
+                      rows={3}
+                      className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none resize-none"
+                      style={{
+                        background: "#F2F2F7",
+                        border: "1px solid #E5E5EA",
+                      }}
+                    />
+                  </div>
+                )}
+
+                <div
+                  className="rounded-xl p-3 mb-3"
+                  style={{
+                    background: "#F9F9FB",
+                    border: "1px solid #E5E5EA",
+                  }}
+                >
+                  <p
+                    className="text-[12px] text-[#8E8E93] mb-1"
+                    style={{ fontWeight: 700, textTransform: "uppercase" }}
+                  >
+                    Vista previa
+                  </p>
+                  <p
+                    className="text-[14px] text-[#1C1C1E]"
+                    style={{ fontWeight: 700 }}
+                  >
+                    {buildTemplatePreview().title}
+                  </p>
+                  <p
+                    className="text-[13px] text-[#636366] mt-1"
+                    style={{ lineHeight: 1.4 }}
+                  >
+                    {buildTemplatePreview().body}
+                  </p>
+                </div>
+
+                <button
+                  onClick={sendTemplateNotification}
+                  disabled={sendingTemplate}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white active:opacity-80 transition-opacity disabled:opacity-50"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #AB1738, #8B1028)",
+                    fontWeight: 600,
+                    fontSize: "15px",
+                  }}
+                >
+                  {sendingTemplate ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <Send size={18} />
+                  )}
+                  {sendingTemplate
+                    ? "Enviando plantilla..."
+                    : "Enviar plantilla"}
+                </button>
               </div>
 
               {/* Custom notification */}

@@ -20,8 +20,8 @@ self.addEventListener("push", (event) => {
   console.log("[Push SW] Push received:", event);
 
   let data = {
-    title: "Proteccion Civil Tamaulipas",
-    body: "Nueva alerta operativa",
+    title: "Alerta operativa",
+    body: "Nuevo evento recibido",
     icon: "/icon.svg",
     badge: "/icon.svg",
     tag: "pc-tamaulipas",

@@ -128,6 +128,18 @@ export function NotificationDetail({
           color: "#AB1738",
           label: "Alerta",
         };
+      case "incident-update":
+        return {
+          bg: "rgba(245,158,11,0.1)",
+          color: "#D97706",
+          label: "Actualización",
+        };
+      case "system-notice":
+        return {
+          bg: "rgba(107,114,128,0.12)",
+          color: "#4B5563",
+          label: "Comunicado",
+        };
       case "pc-tamaulipas":
         return {
           bg: "rgba(188,149,91,0.1)",
@@ -135,6 +147,13 @@ export function NotificationDetail({
           label: "General",
         };
       default:
+        if (tag.startsWith("report-")) {
+          return {
+            bg: "rgba(220,38,38,0.1)",
+            color: "#DC2626",
+            label: "Reporte 911",
+          };
+        }
         return { bg: "#F2F2F7", color: "#636366", label: tag };
     }
   };

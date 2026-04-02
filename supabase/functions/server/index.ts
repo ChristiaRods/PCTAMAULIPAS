@@ -97,6 +97,105 @@ routeGet("/health", (c) => {
 const VAPID_KV_KEY = "push:vapid_keys";
 const VAPID_SUBJECT = "mailto:proteccioncivil@tamaulipas.gob.mx";
 
+type PushTemplateType = "new_report" | "incident_update" | "system_notice";
+
+type PushSendBody = PushPayload & {
+  templateType?: PushTemplateType | string;
+  tipoEmergencia?: string;
+  prioridad?: string;
+  ubicacion?: string;
+  extracto?: string;
+  cambio?: string;
+  message?: string;
+  reportId?: string;
+  linkedReportId?: string;
+  url?: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  attachmentType?: string;
+};
+
+function compactText(value: unknown): string {
+  return typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+}
+
+function clipText(value: string, max: number): string {
+  if (!value) return "";
+  return value.length > max ? `${value.slice(0, max).trimEnd()}...` : value;
+}
+
+function toPushSafeText(value: string): string {
+  return compactText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[·•]/g, "-")
+    .replace(/[“”«»]/g, "\"")
+    .replace(/[’]/g, "'")
+    .replace(/[–—]/g, "-")
+    .replace(/[¡]/g, "!")
+    .replace(/[¿]/g, "?")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseTemplateType(value: unknown): PushTemplateType | null {
+  const normalized = compactText(value).toLowerCase();
+  if (normalized === "new_report") return "new_report";
+  if (normalized === "incident_update") return "incident_update";
+  if (normalized === "system_notice") return "system_notice";
+  return null;
+}
+
+function normalizePriorityLabel(value: unknown): "Alta" | "Media" | "Baja" {
+  const raw = compactText(value).toLowerCase();
+  if (raw === "alta") return "Alta";
+  if (raw === "baja") return "Baja";
+  return "Media";
+}
+
+function buildTemplateContent(input: PushSendBody & { templateType: PushTemplateType }): {
+  title: string;
+  body: string;
+  tag: string;
+} {
+  const tipoEmergencia = clipText(
+    compactText(input.tipoEmergencia) || clipText(compactText(input.title), 52) || "Emergencia",
+    52,
+  );
+  const prioridadLabel = normalizePriorityLabel(input.prioridad);
+  const ubicacion = clipText(compactText(input.ubicacion), 95);
+  const extracto = clipText(compactText(input.extracto) || compactText(input.body), 130);
+  const cambio = clipText(compactText(input.cambio), 120);
+  const message = clipText(compactText(input.message) || compactText(input.body), 180);
+
+  if (input.templateType === "new_report") {
+    const title = `${tipoEmergencia} - Prioridad ${prioridadLabel}`;
+    const body = ubicacion && extracto
+      ? extracto.toLowerCase().startsWith(ubicacion.toLowerCase())
+        ? extracto
+        : `${ubicacion}. ${extracto}`
+      : (extracto || ubicacion || "Nuevo reporte recibido.");
+    return { title, body, tag: compactText(input.tag) || "report-template" };
+  }
+
+  if (input.templateType === "incident_update") {
+    const title = `${tipoEmergencia} - Actualizacion`;
+    const base = cambio || "Se registró una actualización del incidente.";
+    const withLocation = ubicacion && !base.toLowerCase().includes(ubicacion.toLowerCase())
+      ? `${base} ${ubicacion}.`
+      : base;
+    const body = extracto && !withLocation.toLowerCase().includes(extracto.toLowerCase())
+      ? `${withLocation} ${extracto}`
+      : withLocation;
+    return { title, body: body.trim(), tag: compactText(input.tag) || "incident-update" };
+  }
+
+  const title = clipText(compactText(input.title) || "Comunicado operativo", 65);
+  const body = message || "Hay una actualización del sistema.";
+  return { title, body, tag: compactText(input.tag) || "system-notice" };
+}
+
 /** Get or generate VAPID keys (idempotent) */
 async function getOrCreateVAPIDKeys(): Promise<VAPIDKeys> {
   try {
@@ -324,10 +423,20 @@ routePost("/files/upload-evidence", async (c) => {
 /** POST /push/send â€” Send push notification to all subscribers */
 routePost("/push/send", async (c) => {
   try {
-    const body = await c.req.json();
-    const { title, body: notifBody, icon, tag, url, attachmentUrl, attachmentName, attachmentType } = body as PushPayload & { url?: string; attachmentUrl?: string; attachmentName?: string; attachmentType?: string };
+    const reqBody = (await c.req.json()) as PushSendBody;
+    const templateType = parseTemplateType(reqBody.templateType);
+    const { icon, url, attachmentUrl, attachmentName, attachmentType } = reqBody;
+    const resolved = templateType
+      ? buildTemplateContent({ ...reqBody, templateType })
+      : {
+          title: clipText(compactText(reqBody.title), 65),
+          body: clipText(compactText(reqBody.body), 180),
+          tag: clipText(compactText(reqBody.tag), 64) || "pc-tamaulipas",
+        };
+    const safeTitle = toPushSafeText(resolved.title);
+    const safeBody = toPushSafeText(resolved.body);
 
-    if (!title) {
+    if (!safeTitle) {
       return c.json({ error: "Missing notification title" }, 400);
     }
 
@@ -335,12 +444,18 @@ routePost("/push/send", async (c) => {
     const notifId = crypto.randomUUID();
     const notifRecord: Record<string, unknown> = {
       id: notifId,
-      title,
-      body: notifBody || "",
+      title: safeTitle,
+      body: safeBody || "",
       icon: icon || "/icon.svg",
-      tag: tag || "pc-tamaulipas",
+      tag: resolved.tag,
       createdAt: new Date().toISOString(),
     };
+
+    const linkedReportId =
+      compactText(reqBody.linkedReportId) || compactText(reqBody.reportId);
+    if (linkedReportId) {
+      notifRecord.linkedReportId = linkedReportId;
+    }
 
     // Include attachment info if provided
     if (attachmentUrl) {
@@ -360,13 +475,16 @@ routePost("/push/send", async (c) => {
     }
 
     const payload: PushPayload = {
-      title,
-      body: notifBody || "",
+      title: safeTitle,
+      body: safeBody || "",
       icon: icon || "/icon.svg",
       badge: "/icon.svg",
-      tag: tag || "pc-tamaulipas",
-      url: `/?notification=${notifId}`,
-      data: { notificationId: notifId },
+      tag: resolved.tag,
+      url: compactText(url) || `/?notification=${notifId}`,
+      data: {
+        notificationId: notifId,
+        ...(linkedReportId ? { reportId: linkedReportId, linkedReportId } : {}),
+      },
     };
 
     console.log(`Sending push to ${subscriptions.length} subscriber(s)...`);
@@ -423,7 +541,7 @@ routePost("/push/send-test", async (c) => {
     const notifRecord = {
       id: notifId,
       title: "Prueba de notificaciones",
-      body: "Proteccion Civil Tamaulipas: si ves este mensaje, el canal push esta activo.",
+      body: "Si ves este mensaje, el canal push esta activo.",
       icon: "/icon.svg",
       tag: "test-notification",
       createdAt: new Date().toISOString(),
@@ -433,7 +551,7 @@ routePost("/push/send-test", async (c) => {
 
     const payload: PushPayload = {
       title: "Prueba de notificaciones",
-      body: "Proteccion Civil Tamaulipas: si ves este mensaje, el canal push esta activo.",
+      body: "Si ves este mensaje, el canal push esta activo.",
       icon: "/icon.svg",
       badge: "/icon.svg",
       tag: "test-notification",
@@ -849,7 +967,7 @@ routePost("/reports", async (c) => {
           typeof record.prioridad === "string" ? record.prioridad.trim().toLowerCase() : "media";
         const prioridadLabel =
           prioridadRaw === "alta" ? "Alta" : prioridadRaw === "baja" ? "Baja" : "Media";
-        const titleText = `${tipoEmergencia} · Prioridad ${prioridadLabel}`;
+        const titleText = `${tipoEmergencia} - Prioridad ${prioridadLabel}`;
 
         const ubicacion =
           typeof record.ubicacion === "string" ? record.ubicacion.trim() : "";
@@ -867,11 +985,13 @@ routePost("/reports", async (c) => {
             ? snippet
             : `${locationText}. ${snippet}`
           : (snippet || locationText || "Nuevo reporte recibido.");
+        const pushTitleText = toPushSafeText(titleText);
+        const pushBodyText = toPushSafeText(bodyText);
 
         const notifRecord = {
           id: notifId,
-          title: titleText,
-          body: bodyText,
+          title: pushTitleText,
+          body: pushBodyText,
           icon: "/icon.svg",
           tag: `report-${record.id}`,
           createdAt: new Date().toISOString(),
@@ -880,8 +1000,8 @@ routePost("/reports", async (c) => {
         await kv.set(`push:notif:${notifId}`, notifRecord);
 
         const payload: PushPayload = {
-          title: titleText,
-          body: bodyText,
+          title: pushTitleText,
+          body: pushBodyText,
           icon: "/icon.svg",
           badge: "/icon.svg",
           tag: `report-${record.id}`,
