@@ -48,6 +48,12 @@ export function onNotificationClick(callback: (notificationId: string) => void):
 
 /** Fire all listeners */
 function notifyListeners(notificationId: string) {
+  // If Supervisor screen is not mounted yet, keep the ID pending
+  // so it can be consumed when that screen mounts.
+  if (_listeners.length === 0) {
+    _pendingNotificationId = notificationId;
+    return;
+  }
   _listeners.forEach((fn) => fn(notificationId));
 }
 

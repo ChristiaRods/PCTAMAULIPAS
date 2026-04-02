@@ -19,6 +19,7 @@ import { getSubmittedReports, fetchServerReports, toFeedItem } from "./reportSto
 import { PullToRefresh } from "./PullToRefresh";
 import { API_BASE, apiHeaders } from "../lib/apiClient";
 import { fetchServerMonitoring, getSubmittedMonitorings, toMonitoringFeedItem } from "./monitoringStore";
+import { NotificationDetail } from "./NotificationDetail";
 
 /* ─── Server push notification type ─── */
 interface ServerNotification {
@@ -32,6 +33,11 @@ interface ServerNotification {
   attachmentName?: string;
   attachmentType?: string;
   linkedReportId?: string;
+}
+
+interface ServerNotificationOpenRequest {
+  id: string;
+  token: number;
 }
 
 /* ─── Persist tab state across unmount/remount ─── */
@@ -568,15 +574,20 @@ function buildMonitoringNotifications(monitoring: import("./monitoringStore").Su
 function NotificationsView({
   onNavigateToFeed,
   containerRef,
+  openServerNotificationRequest,
+  onServerNotificationRequestHandled,
 }: {
   onNavigateToFeed: (feedId: string) => void;
   containerRef?: React.Ref<HTMLDivElement>;
+  openServerNotificationRequest?: ServerNotificationOpenRequest | null;
+  onServerNotificationRequestHandled?: (token: number) => void;
 }) {
   const [reportNotifs, setReportNotifs] = useState<AppNotification[]>([]);
   const [notifications] = useState(mockNotifications);
   const [serverNotifs, setServerNotifs] = useState<ServerNotification[]>([]);
   const [loadingServer, setLoadingServer] = useState(true);
   const [expandedImages, setExpandedImages] = useState<Set<string>>(new Set());
+  const [selectedServerNotificationId, setSelectedServerNotificationId] = useState<string | null>(null);
   // Counter to force re-render when read state changes in localStorage
   const [readVersion, setReadVersion] = useState(0);
 
@@ -594,6 +605,14 @@ function NotificationsView({
     markIdsRead(ids);
     setReadVersion((v) => v + 1);
   };
+
+  useEffect(() => {
+    const req = openServerNotificationRequest;
+    if (!req?.id) return;
+    persistAndBump(`server-${req.id}`);
+    setSelectedServerNotificationId(req.id);
+    onServerNotificationRequestHandled?.(req.token);
+  }, [openServerNotificationRequest, onServerNotificationRequestHandled]);
 
   /* Fetch push notifications from server */
   const fetchServerNotifs = useCallback(async () => {
@@ -662,10 +681,8 @@ function NotificationsView({
   const handleServerNotifClick = (n: ServerNotification) => {
     // Persist read state for server notifications
     persistAndBump(`server-${n.id}`);
-    // If it's linked to a report, navigate to that report
-    if (n.linkedReportId) {
-      onNavigateToFeed(n.linkedReportId);
-    }
+    // Open in-alert notification detail panel
+    setSelectedServerNotificationId(n.id);
   };
 
   const toggleImageExpanded = (id: string) => {
@@ -862,9 +879,7 @@ function NotificationsView({
                           {n.title}
                         </p>
                         <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-                          {n.linkedReportId && (
-                            <ChevronRight className="w-4 h-4 text-[#C7C7CC]" strokeWidth={2} />
-                          )}
+                          <ChevronRight className="w-4 h-4 text-[#C7C7CC]" strokeWidth={2} />
                           {!isServerRead && (
                             <span
                               className="w-[8px] h-[8px] rounded-full"
@@ -952,11 +967,9 @@ function NotificationsView({
                             Adjunto
                           </span>
                         )}
-                        {n.linkedReportId && (
-                          <span className="text-[11px] text-[#AB1738] bg-[#AB1738]/6 px-1.5 py-0.5 rounded" style={{ fontWeight: 600 }}>
-                            Ver detalle
-                          </span>
-                        )}
+                        <span className="text-[11px] text-[#AB1738] bg-[#AB1738]/6 px-1.5 py-0.5 rounded" style={{ fontWeight: 600 }}>
+                          Ver alerta
+                        </span>
                       </div>
                     </div>
                   </button>
@@ -1070,6 +1083,13 @@ function NotificationsView({
         </div>
       )}
 
+      {selectedServerNotificationId && (
+        <NotificationDetail
+          notificationId={selectedServerNotificationId}
+          onClose={() => setSelectedServerNotificationId(null)}
+        />
+      )}
+
     </PullToRefresh>
   );
 }
@@ -1079,6 +1099,9 @@ export function SupervisorNotifications() {
   const navigate = useNavigate();
   const [lightboxData, setLightboxData] = useState<LightboxData | null>(null);
   const [navView, setNavViewRaw] = useState<NavView>(_savedNavView);
+  const [openServerNotificationRequest, setOpenServerNotificationRequest] =
+    useState<ServerNotificationOpenRequest | null>(null);
+  const openRequestTokenRef = useRef(0);
   const homeScrollRef = useRef<HTMLDivElement | null>(null);
   const reportesScrollRef = useRef<HTMLDivElement | null>(null);
   const monitoreoScrollRef = useRef<HTMLDivElement | null>(null);
@@ -1124,6 +1147,20 @@ export function SupervisorNotifications() {
     restoreScrollForView(v);
   };
 
+  const queueServerNotificationOpen = useCallback((notificationId: string) => {
+    openRequestTokenRef.current += 1;
+    setOpenServerNotificationRequest({
+      id: notificationId,
+      token: openRequestTokenRef.current,
+    });
+  }, []);
+
+  const handleServerNotificationRequestHandled = useCallback((token: number) => {
+    setOpenServerNotificationRequest((current) =>
+      current?.token === token ? null : current,
+    );
+  }, []);
+
   /* ─── Deep link: check for pending notification on mount ─── */
   useEffect(() => {
     const pendingId = consumePendingNotificationId();
@@ -1134,8 +1171,9 @@ export function SupervisorNotifications() {
       _tabScrollPositions.notificaciones = 0;
       persistSupervisorNavState();
       restoreScrollForView("notificaciones");
+      queueServerNotificationOpen(pendingId);
     }
-  }, [restoreScrollForView]);
+  }, [queueServerNotificationOpen, restoreScrollForView]);
 
   /* ─── Deep link: listen for SW postMessage (app already open) ─── */
   useEffect(() => {
@@ -1146,9 +1184,10 @@ export function SupervisorNotifications() {
       _tabScrollPositions.notificaciones = 0;
       persistSupervisorNavState();
       restoreScrollForView("notificaciones");
+      queueServerNotificationOpen(notificationId);
     });
     return unsubscribe;
-  }, [restoreScrollForView]);
+  }, [queueServerNotificationOpen, restoreScrollForView]);
 
   useEffect(() => {
     restoreScrollForView(navView);
@@ -1289,6 +1328,8 @@ export function SupervisorNotifications() {
         <NotificationsView
           onNavigateToFeed={(feedId) => navigate(`/supervisor/${feedId}`)}
           containerRef={notificationsScrollRef}
+          openServerNotificationRequest={openServerNotificationRequest}
+          onServerNotificationRequestHandled={handleServerNotificationRequestHandled}
         />
       )}
 

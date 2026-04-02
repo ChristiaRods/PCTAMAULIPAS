@@ -128,6 +128,7 @@ export function AudioRecorder911({
   const isPressingRef = useRef<boolean>(false);
   const streamRef = useRef<MediaStream | null>(null);
   const audioUrlsRef = useRef<Record<string, string>>({});
+  const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
 
   const isMicSupported =
     typeof navigator !== "undefined" &&
@@ -579,7 +580,15 @@ export function AudioRecorder911({
           : canAddMore
             ? "Manten presionado para dictar"
             : `Limite alcanzado (${maxNotes})`;
+  const isPressWaveActive = isRecordButtonPressed || (isRecording && isPressingRef.current);
   const notesCounter = `${values.length}/${maxNotes}`;
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const transcriptBox = transcriptScrollRef.current;
+    if (!transcriptBox) return;
+    transcriptBox.scrollTop = transcriptBox.scrollHeight;
+  }, [displayTranscript, isModalOpen]);
 
   const liquidShell = {
     background: "linear-gradient(150deg, rgba(255,255,255,0.34), rgba(255,255,255,0.14))",
@@ -711,59 +720,36 @@ export function AudioRecorder911({
             <div className="absolute inset-0 bg-black/42 backdrop-blur-[6px]" />
 
             <div className="absolute inset-0 flex flex-col" style={{ userSelect: "none", WebkitUserSelect: "none" }}>
-              <div className="px-4 pt-[calc(env(safe-area-inset-top)+8px)] pb-2">
-                <div
-                  className="relative mx-auto w-full max-w-[560px] rounded-[24px] px-3 py-2.5 overflow-hidden"
-                  style={liquidShell}
-                >
-                  <div
-                    className="pointer-events-none absolute left-3 right-3 top-0 h-8 rounded-b-[16px]"
+              <style>{`
+                @keyframes voice-wave {
+                  0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0.8; }
+                  70% { opacity: 0.25; }
+                  100% { transform: translate(-50%, -50%) scale(1.32); opacity: 0; }
+                }
+              `}</style>
+
+              <div className="px-4 pt-[calc(env(safe-area-inset-top)+8px)] pb-1 flex justify-center">
+                <div className="w-full max-w-[560px] flex justify-end">
+                  <button
+                    onClick={closeComposer}
+                    type="button"
+                    className="px-3 py-1.5 rounded-full text-[13px] text-white"
                     style={{
-                      background: "linear-gradient(180deg, rgba(255,255,255,0.65), rgba(255,255,255,0))",
+                      background: "rgba(255,255,255,0.16)",
+                      border: "1px solid rgba(255,255,255,0.36)",
+                      backdropFilter: "blur(12px)",
+                      WebkitBackdropFilter: "blur(12px)",
+                      fontWeight: 700,
                     }}
-                  />
-                  <div className="relative z-[1] flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-white text-[15px] leading-tight" style={{ fontWeight: 700 }}>
-                        Evidencias por voz
-                      </p>
-                      <p className="text-white/75 text-[11px] mt-0.5" style={{ fontWeight: 600 }}>
-                        Manten presionado para grabar
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="px-2.5 py-1 rounded-full text-[11px] text-white"
-                        style={{
-                          background: "rgba(255,255,255,0.15)",
-                          border: "1px solid rgba(255,255,255,0.35)",
-                          fontWeight: 700,
-                        }}
-                      >
-                        {notesCounter}
-                      </span>
-                      <button
-                        onClick={closeComposer}
-                        type="button"
-                        className="px-3 py-1.5 rounded-full text-[13px] text-white"
-                        style={{
-                          background: "rgba(255,255,255,0.16)",
-                          border: "1px solid rgba(255,255,255,0.36)",
-                          backdropFilter: "blur(12px)",
-                          WebkitBackdropFilter: "blur(12px)",
-                          fontWeight: 700,
-                        }}
-                      >
-                        Guardar
-                      </button>
-                    </div>
-                  </div>
+                  >
+                    Guardar
+                  </button>
                 </div>
               </div>
 
               <div className="px-4 pt-1">
                 <div
-                  className="relative mx-auto w-full max-w-[560px] min-h-[84px] rounded-[24px] px-4 py-3 overflow-hidden"
+                  className="relative mx-auto w-full max-w-[560px] h-[112px] rounded-[24px] px-4 py-3 overflow-hidden"
                   style={liquidInner}
                 >
                   <div
@@ -772,12 +758,28 @@ export function AudioRecorder911({
                       background: "linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0))",
                     }}
                   />
-                  <p className="relative z-[1] text-[#1C1C1E] text-[18px] leading-[1.25]" style={{ fontWeight: 700 }}>
-                    {displayTranscript ||
-                      (isRecording
-                        ? "Escuchando tu dictado..."
-                        : "Manten presionado el boton central para dictar evidencias")}
-                  </p>
+                  <div
+                    className="pointer-events-none absolute left-0 right-0 top-0 h-9 z-[2]"
+                    style={{
+                      background: "linear-gradient(180deg, rgba(246,246,249,0.98), rgba(246,246,249,0))",
+                    }}
+                  />
+                  <div
+                    ref={transcriptScrollRef}
+                    className="relative z-[1] h-full overflow-y-auto pr-1"
+                    style={{
+                      maskImage: "linear-gradient(to bottom, transparent 0%, black 24%, black 100%)",
+                      WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 24%, black 100%)",
+                      scrollbarWidth: "none",
+                    }}
+                  >
+                    <p className="text-[#1C1C1E] text-[18px] leading-[1.25] whitespace-pre-wrap break-words" style={{ fontWeight: 700 }}>
+                      {displayTranscript ||
+                        (isRecording
+                          ? "Escuchando tu dictado..."
+                          : "Manten presionado el boton central para dictar evidencias")}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -792,44 +794,72 @@ export function AudioRecorder911({
                       background: "linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0))",
                     }}
                   />
-                  <button
-                    type="button"
-                    onPointerDown={startPressRecording}
-                    onPointerUp={stopPressRecording}
-                    onPointerCancel={stopPressRecording}
-                    onContextMenu={(event) => event.preventDefault()}
-                    onDragStart={(event) => event.preventDefault()}
-                    disabled={!isMicSupported || !canAddMore || isRequestingPermission}
-                    className="relative z-[1] rounded-full flex items-center justify-center shadow-2xl"
-                    style={{
-                      width: 112,
-                      height: 112,
-                      border: "1px solid rgba(255,255,255,0.46)",
-                      background:
-                        isRecording || isRecordButtonPressed
-                          ? `linear-gradient(155deg, ${GUINDO_DARK}, ${GUINDO})`
-                          : `linear-gradient(155deg, ${GUINDO}, ${GUINDO_DARK})`,
-                      transform: isRecordButtonPressed ? "scale(0.93) translateY(2px)" : "scale(1)",
-                      transition: "transform 120ms ease, filter 180ms ease, box-shadow 180ms ease",
-                      filter: isRecording ? "saturate(1.15) brightness(1.07)" : "none",
-                      boxShadow: isRecording
-                        ? "0 18px 38px rgba(171,23,56,0.45), inset 0 1px 0 rgba(255,255,255,0.35)"
-                        : "0 14px 30px rgba(17,24,39,0.4), inset 0 1px 0 rgba(255,255,255,0.25)",
-                      touchAction: "none",
-                      userSelect: "none",
-                      WebkitUserSelect: "none",
-                      WebkitTouchCallout: "none",
-                    }}
-                    aria-label={isRecording ? "Suelta para detener grabacion" : "Manten presionado para grabar"}
-                  >
-                    {isRecording ? (
-                      <Square className="w-8 h-8 text-white" strokeWidth={0} fill="white" />
-                    ) : (
-                      <Mic className="w-9 h-9 text-white" strokeWidth={2} />
+                  <div className="relative z-[1] w-[210px] h-[150px] overflow-hidden flex items-center justify-center">
+                    {isPressWaveActive && (
+                      <>
+                        <span
+                          className="absolute left-1/2 top-1/2 rounded-full border-2 border-white/80"
+                          style={{ width: 84, height: 84, animation: "voice-wave 1.35s linear infinite" }}
+                        />
+                        <span
+                          className="absolute left-1/2 top-1/2 rounded-full border-2 border-white/65"
+                          style={{ width: 84, height: 84, animation: "voice-wave 1.35s linear infinite", animationDelay: "220ms" }}
+                        />
+                        <span
+                          className="absolute left-1/2 top-1/2 rounded-full border-2 border-white/50"
+                          style={{ width: 84, height: 84, animation: "voice-wave 1.35s linear infinite", animationDelay: "440ms" }}
+                        />
+                      </>
                     )}
-                  </button>
+                    <button
+                      type="button"
+                      onPointerDown={startPressRecording}
+                      onPointerUp={stopPressRecording}
+                      onPointerCancel={stopPressRecording}
+                      onContextMenu={(event) => event.preventDefault()}
+                      onDragStart={(event) => event.preventDefault()}
+                      disabled={!isMicSupported || !canAddMore || isRequestingPermission}
+                      className="relative z-[2] rounded-full flex items-center justify-center shadow-2xl"
+                      style={{
+                        width: 112,
+                        height: 112,
+                        border: "1px solid rgba(255,255,255,0.5)",
+                        background: isPressWaveActive
+                          ? "linear-gradient(155deg, #FFFFFF, #ECECF0)"
+                          : `linear-gradient(155deg, ${GUINDO}, ${GUINDO_DARK})`,
+                        transform: isRecordButtonPressed ? "scale(0.93) translateY(2px)" : "scale(1)",
+                        transition: "transform 120ms ease, filter 180ms ease, box-shadow 180ms ease, background 180ms ease",
+                        filter: isRecording ? "saturate(1.15) brightness(1.07)" : "none",
+                        boxShadow: isPressWaveActive
+                          ? "0 16px 34px rgba(255,255,255,0.32), inset 0 1px 0 rgba(255,255,255,0.85)"
+                          : isRecording
+                            ? "0 18px 38px rgba(171,23,56,0.45), inset 0 1px 0 rgba(255,255,255,0.35)"
+                            : "0 14px 30px rgba(17,24,39,0.4), inset 0 1px 0 rgba(255,255,255,0.25)",
+                        touchAction: "none",
+                        userSelect: "none",
+                        WebkitUserSelect: "none",
+                        WebkitTouchCallout: "none",
+                      }}
+                      aria-label={isRecording ? "Suelta para detener grabacion" : "Manten presionado para grabar"}
+                    >
+                      {isRecording ? (
+                        <Square
+                          className="w-8 h-8"
+                          strokeWidth={0}
+                          fill={isPressWaveActive ? GUINDO : "white"}
+                          style={{ color: isPressWaveActive ? GUINDO : "white" }}
+                        />
+                      ) : (
+                        <Mic
+                          className="w-9 h-9"
+                          strokeWidth={2}
+                          style={{ color: isPressWaveActive ? GUINDO : "white" }}
+                        />
+                      )}
+                    </button>
+                  </div>
 
-                  <p className="relative z-[1] mt-3 text-center text-white/92 text-[12px]" style={{ fontWeight: 600 }}>
+                  <p className="relative z-[1] mt-1 text-center text-white/92 text-[12px]" style={{ fontWeight: 600 }}>
                     {statusCopy}
                   </p>
                 </div>

@@ -23,6 +23,10 @@ import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "./RouterContext";
 import { AvatarCropper } from "./AvatarCropper";
 import { API_BASE, apiHeaders } from "../lib/apiClient";
+import {
+  ensurePushSubscriptionInBackground,
+  requestAndSubscribePush,
+} from "../lib/pushOnboarding";
 
 /* ─── Institutional palette ─── */
 const GUINDO = "#AB1738";
@@ -84,15 +88,17 @@ export interface NotifPrefs {
 }
 
 const DEFAULT_PREFS: NotifPrefs = {
-  reportes911: true,
+  reportes911: false,
   r911Alta: true,
   r911Media: true,
   r911Baja: true,
-  monitoreo: true,
+  monitoreo: false,
   monAlta: true,
   monMedia: true,
   monBaja: true,
 };
+
+const PUSH_GLOBAL_ENABLED_KEY = "pc-push-global-enabled-v1";
 
 export function loadNotifPrefs(): NotifPrefs {
   try {
@@ -155,6 +161,27 @@ function getCurrentRoleId(): string {
   return (
     localStorage.getItem("pc-current-role") || "coordinador"
   );
+}
+
+function loadPushGlobalEnabled(): boolean {
+  try {
+    return (
+      localStorage.getItem(PUSH_GLOBAL_ENABLED_KEY) === "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function savePushGlobalEnabled(enabled: boolean) {
+  try {
+    localStorage.setItem(
+      PUSH_GLOBAL_ENABLED_KEY,
+      enabled ? "1" : "0",
+    );
+  } catch {
+    // ignore
+  }
 }
 
 /* ─── Shared UI primitives ─── */
@@ -228,13 +255,18 @@ function Separator({ inset = 16 }: { inset?: number }) {
 function Toggle({
   on,
   onChange,
+  disabled = false,
 }: {
   on: boolean;
   onChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <button
-      onClick={() => onChange(!on)}
+      onClick={() => {
+        if (!disabled) onChange(!on);
+      }}
+      disabled={disabled}
       className="relative shrink-0 transition-colors duration-300 rounded-full"
       style={{
         width: 51,
@@ -242,6 +274,7 @@ function Toggle({
         background: on
           ? `linear-gradient(135deg, ${GUINDO}, ${GUINDO_DARK})`
           : "rgba(120,120,128,0.16)",
+        opacity: disabled ? 0.65 : 1,
       }}
     >
       <div
@@ -440,6 +473,8 @@ function CategoryDetail({
   iconBg,
   enabled,
   onToggle,
+  toggleDisabled = false,
+  toggleHint,
   priorities,
   onPriorityToggle,
   onBack,
@@ -453,6 +488,8 @@ function CategoryDetail({
   iconBg: string;
   enabled: boolean;
   onToggle: (v: boolean) => void;
+  toggleDisabled?: boolean;
+  toggleHint?: string | null;
   priorities: { key: string; label: string; active: boolean }[];
   onPriorityToggle: (key: string) => void;
   onBack: () => void;
@@ -523,11 +560,16 @@ function CategoryDetail({
               >
                 Permitir Notificaciones
               </span>
-              <Toggle on={enabled} onChange={onToggle} />
+              <Toggle
+                on={enabled}
+                onChange={onToggle}
+                disabled={toggleDisabled}
+              />
             </div>
           </Card>
           <SectionFooter>
-            Recibe alertas en tiempo real para esta categoría.
+            {toggleHint ||
+              "Recibe alertas en tiempo real para esta categoría."}
           </SectionFooter>
         </div>
 
@@ -781,8 +823,25 @@ export function SettingsView({ onClose }: { onClose?: () => void }) {
   );
 
   /* ─── Notification prefs + sub-screens ─── */
-  const [prefs, setPrefs] =
-    useState<NotifPrefs>(loadNotifPrefs);
+  const [pushGlobalEnabled, setPushGlobalEnabled] =
+    useState<boolean>(() => loadPushGlobalEnabled());
+  const [pushToggleBusy, setPushToggleBusy] = useState(false);
+  const [pushToggleHint, setPushToggleHint] = useState<
+    string | null
+  >(null);
+  const [prefs, setPrefs] = useState<NotifPrefs>(() => {
+    const loaded = loadNotifPrefs();
+    if (!loadPushGlobalEnabled()) {
+      const normalized = {
+        ...loaded,
+        reportes911: false,
+        monitoreo: false,
+      };
+      savePrefs(normalized);
+      return normalized;
+    }
+    return loaded;
+  });
   const [detailView, setDetailView] = useState<
     "r911" | "mon" | null
   >(null);
@@ -798,6 +857,76 @@ export function SettingsView({ onClose }: { onClose?: () => void }) {
     [],
   );
 
+  const ensurePushActivation = useCallback(async () => {
+    if (pushGlobalEnabled) {
+      void ensurePushSubscriptionInBackground();
+      return true;
+    }
+
+    setPushToggleBusy(true);
+    setPushToggleHint(null);
+
+    try {
+      const result = await requestAndSubscribePush();
+      if (result.ok) {
+        savePushGlobalEnabled(true);
+        setPushGlobalEnabled(true);
+        setPushToggleHint(
+          "Notificaciones activadas en este dispositivo.",
+        );
+        return true;
+      }
+
+      switch (result.state) {
+        case "permission-denied":
+          setPushToggleHint(
+            "Permiso denegado. Actívalo en Ajustes del navegador para continuar.",
+          );
+          break;
+        case "permission-dismissed":
+          setPushToggleHint(
+            "Permiso no concedido. Puedes intentarlo nuevamente cuando quieras.",
+          );
+          break;
+        case "unsupported":
+          setPushToggleHint(
+            "Este dispositivo no soporta notificaciones push para esta app.",
+          );
+          break;
+        default:
+          setPushToggleHint(
+            "No se pudo activar notificaciones en este momento. Inténtalo más tarde.",
+          );
+          break;
+      }
+      return false;
+    } finally {
+      setPushToggleBusy(false);
+    }
+  }, [pushGlobalEnabled]);
+
+  const handleCategoryToggle = useCallback(
+    async (
+      key: "reportes911" | "monitoreo",
+      enabled: boolean,
+    ) => {
+      if (!enabled) {
+        updatePrefs({ [key]: false });
+        setPushToggleHint(null);
+        return;
+      }
+
+      const activated = await ensurePushActivation();
+      if (!activated) {
+        updatePrefs({ [key]: false });
+        return;
+      }
+
+      updatePrefs({ [key]: true });
+    },
+    [ensurePushActivation, updatePrefs],
+  );
+
   /* ─── Priority counts ─── */
   const r911ActivePri = [
     prefs.r911Alta,
@@ -809,6 +938,18 @@ export function SettingsView({ onClose }: { onClose?: () => void }) {
     prefs.monMedia,
     prefs.monBaja,
   ].filter(Boolean).length;
+
+  useEffect(() => {
+    if (
+      !pushGlobalEnabled ||
+      typeof window === "undefined" ||
+      !("Notification" in window) ||
+      Notification.permission !== "granted"
+    ) {
+      return;
+    }
+    void ensurePushSubscriptionInBackground();
+  }, [pushGlobalEnabled]);
 
   /* ─── Load avatar ─── */
   useEffect(() => {
@@ -1275,7 +1416,15 @@ export function SettingsView({ onClose }: { onClose?: () => void }) {
             icon={FileText}
             iconBg={`linear-gradient(135deg, ${GUINDO}, ${GUINDO_DARK})`}
             enabled={prefs.reportes911}
-            onToggle={(v) => updatePrefs({ reportes911: v })}
+            onToggle={(v) =>
+              void handleCategoryToggle("reportes911", v)
+            }
+            toggleDisabled={pushToggleBusy}
+            toggleHint={
+              pushToggleBusy
+                ? "Activando notificaciones..."
+                : pushToggleHint
+            }
             priorities={[
               {
                 key: "r911Alta",
@@ -1309,7 +1458,15 @@ export function SettingsView({ onClose }: { onClose?: () => void }) {
             icon={Activity}
             iconBg={`linear-gradient(135deg, ${DORADO}, #D4AB6E)`}
             enabled={prefs.monitoreo}
-            onToggle={(v) => updatePrefs({ monitoreo: v })}
+            onToggle={(v) =>
+              void handleCategoryToggle("monitoreo", v)
+            }
+            toggleDisabled={pushToggleBusy}
+            toggleHint={
+              pushToggleBusy
+                ? "Activando notificaciones..."
+                : pushToggleHint
+            }
             priorities={[
               {
                 key: "monAlta",
