@@ -19,7 +19,6 @@ import { getSubmittedReports, fetchServerReports, toFeedItem } from "./reportSto
 import { PullToRefresh } from "./PullToRefresh";
 import { API_BASE, apiHeaders } from "../lib/apiClient";
 import { fetchServerMonitoring, getSubmittedMonitorings, toMonitoringFeedItem } from "./monitoringStore";
-import { NotificationDetail } from "./NotificationDetail";
 
 /* ─── Server push notification type ─── */
 interface ServerNotification {
@@ -587,7 +586,7 @@ function NotificationsView({
   const [serverNotifs, setServerNotifs] = useState<ServerNotification[]>([]);
   const [loadingServer, setLoadingServer] = useState(true);
   const [expandedImages, setExpandedImages] = useState<Set<string>>(new Set());
-  const [selectedServerNotificationId, setSelectedServerNotificationId] = useState<string | null>(null);
+  const handledOpenRequestTokenRef = useRef<number | null>(null);
   // Counter to force re-render when read state changes in localStorage
   const [readVersion, setReadVersion] = useState(0);
 
@@ -609,10 +608,49 @@ function NotificationsView({
   useEffect(() => {
     const req = openServerNotificationRequest;
     if (!req?.id) return;
+    if (handledOpenRequestTokenRef.current === req.token) return;
+
+    const serverNotif = serverNotifs.find((notif) => notif.id === req.id);
+    if (!serverNotif && loadingServer) return;
+
+    handledOpenRequestTokenRef.current = req.token;
     persistAndBump(`server-${req.id}`);
-    setSelectedServerNotificationId(req.id);
-    onServerNotificationRequestHandled?.(req.token);
-  }, [openServerNotificationRequest, onServerNotificationRequestHandled]);
+
+    let cancelled = false;
+    const openLinkedFeed = async () => {
+      try {
+        let linkedFeedId = serverNotif?.linkedReportId;
+        if (!linkedFeedId && !serverNotif) {
+          const res = await fetch(`${API_BASE}/push/notification/${req.id}`, {
+            headers: apiHeaders,
+          });
+          if (res.ok) {
+            const data = await res.json();
+            linkedFeedId = data?.notification?.linkedReportId;
+          }
+        }
+
+        if (!cancelled && linkedFeedId) {
+          onNavigateToFeed(linkedFeedId);
+        }
+      } finally {
+        if (!cancelled) {
+          onServerNotificationRequestHandled?.(req.token);
+        }
+      }
+    };
+
+    void openLinkedFeed();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    loadingServer,
+    onNavigateToFeed,
+    onServerNotificationRequestHandled,
+    openServerNotificationRequest,
+    serverNotifs,
+  ]);
 
   /* Fetch push notifications from server */
   const fetchServerNotifs = useCallback(async () => {
@@ -681,8 +719,9 @@ function NotificationsView({
   const handleServerNotifClick = (n: ServerNotification) => {
     // Persist read state for server notifications
     persistAndBump(`server-${n.id}`);
-    // Open in-alert notification detail panel
-    setSelectedServerNotificationId(n.id);
+    if (n.linkedReportId) {
+      onNavigateToFeed(n.linkedReportId);
+    }
   };
 
   const toggleImageExpanded = (id: string) => {
@@ -879,7 +918,9 @@ function NotificationsView({
                           {n.title}
                         </p>
                         <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-                          <ChevronRight className="w-4 h-4 text-[#C7C7CC]" strokeWidth={2} />
+                          {n.linkedReportId && (
+                            <ChevronRight className="w-4 h-4 text-[#C7C7CC]" strokeWidth={2} />
+                          )}
                           {!isServerRead && (
                             <span
                               className="w-[8px] h-[8px] rounded-full"
@@ -967,9 +1008,11 @@ function NotificationsView({
                             Adjunto
                           </span>
                         )}
-                        <span className="text-[11px] text-[#AB1738] bg-[#AB1738]/6 px-1.5 py-0.5 rounded" style={{ fontWeight: 600 }}>
-                          Ver alerta
-                        </span>
+                        {n.linkedReportId && (
+                          <span className="text-[11px] text-[#AB1738] bg-[#AB1738]/6 px-1.5 py-0.5 rounded" style={{ fontWeight: 600 }}>
+                            Ver detalle
+                          </span>
+                        )}
                       </div>
                     </div>
                   </button>
@@ -1082,14 +1125,6 @@ function NotificationsView({
           </div>
         </div>
       )}
-
-      {selectedServerNotificationId && (
-        <NotificationDetail
-          notificationId={selectedServerNotificationId}
-          onClose={() => setSelectedServerNotificationId(null)}
-        />
-      )}
-
     </PullToRefresh>
   );
 }
