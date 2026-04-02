@@ -116,6 +116,7 @@ export function AudioRecorder911({
   const [liveTranscript, setLiveTranscript] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
+  const [showTranscriptFade, setShowTranscriptFade] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -584,10 +585,22 @@ export function AudioRecorder911({
   const notesCounter = `${values.length}/${maxNotes}`;
 
   useEffect(() => {
-    if (!isModalOpen) return;
+    if (!isModalOpen) {
+      setShowTranscriptFade(false);
+      return;
+    }
     const transcriptBox = transcriptScrollRef.current;
     if (!transcriptBox) return;
     transcriptBox.scrollTop = transcriptBox.scrollHeight;
+    const animationFrame = window.requestAnimationFrame(() => {
+      const hasOverflow = transcriptBox.scrollHeight > transcriptBox.clientHeight + 4;
+      const hasScrolled = transcriptBox.scrollTop > 2;
+      const hasLiveText = displayTranscript.trim().length > 0;
+      setShowTranscriptFade(hasLiveText && hasOverflow && hasScrolled);
+    });
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+    };
   }, [displayTranscript, isModalOpen]);
 
   const liquidShell = {
@@ -722,9 +735,12 @@ export function AudioRecorder911({
             <div className="absolute inset-0 flex flex-col" style={{ userSelect: "none", WebkitUserSelect: "none" }}>
               <style>{`
                 @keyframes voice-wave {
-                  0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0.8; }
-                  70% { opacity: 0.25; }
-                  100% { transform: translate(-50%, -50%) scale(1.32); opacity: 0; }
+                  0% { transform: translate(-50%, -50%) scale(0.16); opacity: 0.96; }
+                  72% { opacity: 0.62; }
+                  100% { transform: translate(-50%, -50%) scale(10); opacity: 0; }
+                }
+                .live-transcript-scroll::-webkit-scrollbar {
+                  display: none;
                 }
               `}</style>
 
@@ -758,19 +774,34 @@ export function AudioRecorder911({
                       background: "linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0))",
                     }}
                   />
-                  <div
-                    className="pointer-events-none absolute left-0 right-0 top-0 h-9 z-[2]"
-                    style={{
-                      background: "linear-gradient(180deg, rgba(246,246,249,0.98), rgba(246,246,249,0))",
-                    }}
-                  />
+                  {showTranscriptFade && (
+                    <div
+                      className="pointer-events-none absolute left-0 right-0 top-0 h-10 z-[2]"
+                      style={{
+                        background: "linear-gradient(180deg, rgba(246,246,249,0.98), rgba(246,246,249,0))",
+                      }}
+                    />
+                  )}
                   <div
                     ref={transcriptScrollRef}
-                    className="relative z-[1] h-full overflow-y-auto pr-1"
+                    onScroll={() => {
+                      const transcriptBox = transcriptScrollRef.current;
+                      if (!transcriptBox) return;
+                      const hasOverflow = transcriptBox.scrollHeight > transcriptBox.clientHeight + 4;
+                      const hasScrolled = transcriptBox.scrollTop > 2;
+                      const hasLiveText = displayTranscript.trim().length > 0;
+                      setShowTranscriptFade(hasLiveText && hasOverflow && hasScrolled);
+                    }}
+                    className="live-transcript-scroll relative z-[1] h-full overflow-y-auto pr-1"
                     style={{
-                      maskImage: "linear-gradient(to bottom, transparent 0%, black 24%, black 100%)",
-                      WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 24%, black 100%)",
+                      maskImage: showTranscriptFade
+                        ? "linear-gradient(to bottom, transparent 0%, black 24%, black 100%)"
+                        : "none",
+                      WebkitMaskImage: showTranscriptFade
+                        ? "linear-gradient(to bottom, transparent 0%, black 24%, black 100%)"
+                        : "none",
                       scrollbarWidth: "none",
+                      msOverflowStyle: "none",
                     }}
                   >
                     <p className="text-[#1C1C1E] text-[18px] leading-[1.25] whitespace-pre-wrap break-words" style={{ fontWeight: 700 }}>
@@ -794,20 +825,53 @@ export function AudioRecorder911({
                       background: "linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0))",
                     }}
                   />
-                  <div className="relative z-[1] w-[210px] h-[150px] overflow-hidden flex items-center justify-center">
+                  <div
+                    className="relative z-[1] w-full max-w-[520px] h-[170px] overflow-hidden rounded-[24px] flex items-center justify-center"
+                    style={{
+                      border: "1.5px solid rgba(255,255,255,0.38)",
+                      background: "linear-gradient(160deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))",
+                    }}
+                  >
                     {isPressWaveActive && (
                       <>
                         <span
-                          className="absolute left-1/2 top-1/2 rounded-full border-2 border-white/80"
-                          style={{ width: 84, height: 84, animation: "voice-wave 1.35s linear infinite" }}
+                          className="absolute left-1/2 top-1/2 rounded-full"
+                          style={{
+                            width: 52,
+                            height: 52,
+                            border: "2.5px solid rgba(255,255,255,0.96)",
+                            animation: "voice-wave 2.1s linear infinite",
+                          }}
                         />
                         <span
-                          className="absolute left-1/2 top-1/2 rounded-full border-2 border-white/65"
-                          style={{ width: 84, height: 84, animation: "voice-wave 1.35s linear infinite", animationDelay: "220ms" }}
+                          className="absolute left-1/2 top-1/2 rounded-full"
+                          style={{
+                            width: 52,
+                            height: 52,
+                            border: "2.5px solid rgba(255,255,255,0.9)",
+                            animation: "voice-wave 2.1s linear infinite",
+                            animationDelay: "320ms",
+                          }}
                         />
                         <span
-                          className="absolute left-1/2 top-1/2 rounded-full border-2 border-white/50"
-                          style={{ width: 84, height: 84, animation: "voice-wave 1.35s linear infinite", animationDelay: "440ms" }}
+                          className="absolute left-1/2 top-1/2 rounded-full"
+                          style={{
+                            width: 52,
+                            height: 52,
+                            border: "2.5px solid rgba(255,255,255,0.82)",
+                            animation: "voice-wave 2.1s linear infinite",
+                            animationDelay: "640ms",
+                          }}
+                        />
+                        <span
+                          className="absolute left-1/2 top-1/2 rounded-full"
+                          style={{
+                            width: 52,
+                            height: 52,
+                            border: "2.5px solid rgba(255,255,255,0.75)",
+                            animation: "voice-wave 2.1s linear infinite",
+                            animationDelay: "960ms",
+                          }}
                         />
                       </>
                     )}
