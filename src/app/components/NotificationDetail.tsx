@@ -128,11 +128,30 @@ export function NotificationDetail({
           color: "#AB1738",
           label: "Alerta",
         };
+      case "report-new":
+        return {
+          bg: "rgba(220,38,38,0.1)",
+          color: "#DC2626",
+          label: "Nuevo Reporte 911",
+        };
+      case "report-update":
       case "incident-update":
         return {
           bg: "rgba(245,158,11,0.1)",
           color: "#D97706",
-          label: "Actualización",
+          label: "Actualizacion 911",
+        };
+      case "monitoring-new":
+        return {
+          bg: "rgba(171,23,56,0.1)",
+          color: "#AB1738",
+          label: "Nuevo Monitoreo",
+        };
+      case "monitoring-update":
+        return {
+          bg: "rgba(188,149,91,0.12)",
+          color: "#A07C48",
+          label: "Actualizacion Monitoreo",
         };
       case "system-notice":
         return {

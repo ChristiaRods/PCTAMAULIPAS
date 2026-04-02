@@ -50,8 +50,9 @@ interface StatusInfo {
 
 type PushTemplateType =
   | "new_report"
-  | "incident_update"
-  | "system_notice";
+  | "report_update"
+  | "new_monitoring"
+  | "monitoring_update";
 
 const STATUS_MAP: Record<PushStatus, StatusInfo> = {
   unsupported: {
@@ -532,11 +533,13 @@ export function PushNotificationManager() {
     }
   }, [addLog, sendLocalNotification]);
 
-  /* ─── Template variants (3 agreed push formats) ─── */
+  /* Template variants (4 compact iPhone layouts) */
   const [templateType, setTemplateType] =
     useState<PushTemplateType>("new_report");
   const [templateEmergency, setTemplateEmergency] =
     useState("Incendio Estructural");
+  const [templateMonitoringType, setTemplateMonitoringType] =
+    useState("Recorrido preventivo");
   const [templatePriority, setTemplatePriority] =
     useState<"alta" | "media" | "baja">("media");
   const [templateLocation, setTemplateLocation] = useState(
@@ -548,56 +551,83 @@ export function PushNotificationManager() {
   const [templateChange, setTemplateChange] = useState(
     "Estatus actualizado por operador regional.",
   );
-  const [templateSystemTitle, setTemplateSystemTitle] = useState(
-    "Comunicado operativo",
-  );
-  const [templateSystemBody, setTemplateSystemBody] = useState(
-    "Se mantiene monitoreo preventivo en las zonas de riesgo.",
-  );
+  const [templateChangeKind, setTemplateChangeKind] =
+    useState<"evidencia" | "mas_info">("mas_info");
   const [sendingTemplate, setSendingTemplate] = useState(false);
 
   const buildTemplatePreview = useCallback(() => {
     const normalize = (value: string) => value.trim().replace(/\s+/g, " ");
-    const location = normalize(templateLocation);
-    const snippet = normalize(templateSnippet);
+    const clip = (value: string, max: number) =>
+      value.length > max ? `${value.slice(0, max).trimEnd()}...` : value;
+    const location = clip(normalize(templateLocation), 70);
+    const snippet = clip(normalize(templateSnippet), 120);
+    const incident = clip(normalize(templateEmergency) || "Emergencia", 45);
+    const monitoringType = clip(
+      normalize(templateMonitoringType) || "Monitoreo",
+      45,
+    );
+    const priorityLabel =
+      templatePriority === "alta"
+        ? "Alta"
+        : templatePriority === "baja"
+          ? "Baja"
+          : "Media";
+    const updateKind =
+      templateChangeKind === "evidencia"
+        ? "(Nueva evidencia)"
+        : "(Mas informacion)";
+    const joinBody = (lead: string, detail: string) => {
+      const base = normalize(lead);
+      const extra = normalize(detail);
+      if (!base && !extra) return "";
+      if (!base) return clip(extra, 118);
+      if (!extra) return clip(base, 118);
+      return clip(`${base}. ${extra}`, 118);
+    };
 
     if (templateType === "new_report") {
-      const title = `${normalize(templateEmergency) || "Emergencia"} - Prioridad ${templatePriority === "alta" ? "Alta" : templatePriority === "baja" ? "Baja" : "Media"}`;
-      const body = location && snippet
-        ? snippet.toLowerCase().startsWith(location.toLowerCase())
-          ? snippet
-          : `${location}. ${snippet}`
-        : snippet || location || "Nuevo reporte recibido.";
+      const title = "Nuevo Reporte 911";
+      const lead = location
+        ? `${incident} - ${location}`
+        : `${incident} - Prioridad ${priorityLabel}`;
+      const body = joinBody(lead, snippet) || "Nuevo reporte recibido.";
       return { title, body };
     }
 
-    if (templateType === "incident_update") {
-      const title = `${normalize(templateEmergency) || "Emergencia"} - Actualizacion`;
-      const change = normalize(templateChange) || "Se registró una actualización del incidente.";
-      const withLocation = location && !change.toLowerCase().includes(location.toLowerCase())
-        ? `${change} ${location}.`
-        : change;
-      const body = snippet && !withLocation.toLowerCase().includes(snippet.toLowerCase())
-        ? `${withLocation} ${snippet}`
-        : withLocation;
+    if (templateType === "report_update") {
+      const title = "Actualizacion Reporte 911";
+      const lead = `${incident} - ${updateKind}${location ? ` ${location}` : ""}`;
+      const detail = normalize(templateChange) || snippet;
+      const body = joinBody(lead, detail) || `${incident} - ${updateKind}`;
+      return { title, body };
+    }
+
+    if (templateType === "new_monitoring") {
+      const title = "Nuevo Monitoreo";
+      const lead = location
+        ? `${monitoringType} - ${location}`
+        : monitoringType;
+      const body = joinBody(lead, snippet) || "Nuevo monitoreo registrado.";
       return { title, body };
     }
 
     return {
-      title: normalize(templateSystemTitle) || "Comunicado operativo",
+      title: "Actualizacion Monitoreo",
       body:
-        normalize(templateSystemBody) ||
-        "Hay una actualización del sistema.",
+        joinBody(
+          `${monitoringType} - ${updateKind}${location ? ` ${location}` : ""}`,
+          normalize(templateChange) || snippet,
+        ) || `${monitoringType} - ${updateKind}`,
     };
   }, [
     templateType,
     templateEmergency,
+    templateMonitoringType,
     templatePriority,
     templateLocation,
     templateSnippet,
     templateChange,
-    templateSystemTitle,
-    templateSystemBody,
+    templateChangeKind,
   ]);
 
   const sendTemplateNotification = useCallback(async () => {
@@ -631,12 +661,12 @@ export function PushNotificationManager() {
       const payload = {
         templateType,
         tipoEmergencia: templateEmergency,
+        tipoMonitoreo: templateMonitoringType,
         prioridad: templatePriority,
         ubicacion: templateLocation,
         extracto: templateSnippet,
         cambio: templateChange,
-        title: templateSystemTitle,
-        message: templateSystemBody,
+        changeKind: templateChangeKind,
       };
 
       const res = await fetch(`${API_BASE}/push/send`, {
@@ -672,12 +702,12 @@ export function PushNotificationManager() {
     sendLocalNotification,
     templateType,
     templateEmergency,
+    templateMonitoringType,
     templatePriority,
     templateLocation,
     templateSnippet,
     templateChange,
-    templateSystemTitle,
-    templateSystemBody,
+    templateChangeKind,
   ]);
 
   /* â”€â”€â”€ Send custom notification â”€â”€â”€ */
@@ -1169,15 +1199,16 @@ export function PushNotificationManager() {
                     className="text-[15px] text-[#1C1C1E]"
                     style={{ fontWeight: 600 }}
                   >
-                    Plantillas Push (3 variantes)
+                    Plantillas Push (4 variantes)
                   </p>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 mb-3">
+                <div className="grid grid-cols-2 gap-2 mb-3">
                   {[
-                    { id: "new_report", label: "Nueva alerta" },
-                    { id: "incident_update", label: "Actualización" },
-                    { id: "system_notice", label: "Sistema" },
+                    { id: "new_report", label: "Nuevo Reporte 911" },
+                    { id: "report_update", label: "Actualizacion Reporte 911" },
+                    { id: "new_monitoring", label: "Nuevo Monitoreo" },
+                    { id: "monitoring_update", label: "Actualizacion Monitoreo" },
                   ].map((item) => {
                     const active = templateType === item.id;
                     return (
@@ -1202,9 +1233,9 @@ export function PushNotificationManager() {
                   })}
                 </div>
 
-                {(templateType === "new_report" ||
-                  templateType === "incident_update") && (
-                  <div className="flex flex-col gap-2 mb-3">
+                <div className="flex flex-col gap-2 mb-3">
+                  {(templateType === "new_report" ||
+                    templateType === "report_update") && (
                     <input
                       value={templateEmergency}
                       onChange={(e) =>
@@ -1217,109 +1248,139 @@ export function PushNotificationManager() {
                         border: "1px solid #E5E5EA",
                       }}
                     />
-                    {templateType === "new_report" && (
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { id: "alta", label: "Alta" },
-                          { id: "media", label: "Media" },
-                          { id: "baja", label: "Baja" },
-                        ].map((item) => {
-                          const active = templatePriority === item.id;
-                          return (
-                            <button
-                              key={item.id}
-                              onClick={() =>
-                                setTemplatePriority(
-                                  item.id as "alta" | "media" | "baja",
-                                )
-                              }
-                              className="px-2 py-2 rounded-xl text-[12px]"
-                              style={{
-                                background: active
-                                  ? "rgba(188,149,91,0.16)"
-                                  : "#F2F2F7",
-                                border: `1px solid ${active ? "rgba(188,149,91,0.45)" : "#E5E5EA"}`,
-                                color: active ? "#A07C48" : "#636366",
-                                fontWeight: active ? 700 : 600,
-                              }}
-                            >
-                              {item.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                  )}
+
+                  {(templateType === "new_monitoring" ||
+                    templateType === "monitoring_update") && (
                     <input
-                      value={templateLocation}
+                      value={templateMonitoringType}
                       onChange={(e) =>
-                        setTemplateLocation(e.target.value)
+                        setTemplateMonitoringType(e.target.value)
                       }
-                      placeholder="Ubicación"
+                      placeholder="Tipo de monitoreo"
                       className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
                       style={{
                         background: "#F2F2F7",
                         border: "1px solid #E5E5EA",
                       }}
                     />
-                    {templateType === "incident_update" && (
+                  )}
+
+                  {templateType === "new_report" && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: "alta", label: "Alta" },
+                        { id: "media", label: "Media" },
+                        { id: "baja", label: "Baja" },
+                      ].map((item) => {
+                        const active = templatePriority === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() =>
+                              setTemplatePriority(
+                                item.id as "alta" | "media" | "baja",
+                              )
+                            }
+                            className="px-2 py-2 rounded-xl text-[12px]"
+                            style={{
+                              background: active
+                                ? "rgba(188,149,91,0.16)"
+                                : "#F2F2F7",
+                              border: `1px solid ${active ? "rgba(188,149,91,0.45)" : "#E5E5EA"}`,
+                              color: active ? "#A07C48" : "#636366",
+                              fontWeight: active ? 700 : 600,
+                            }}
+                          >
+                            {item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <input
+                    value={templateLocation}
+                    onChange={(e) =>
+                      setTemplateLocation(e.target.value)
+                    }
+                    placeholder="Ciudad / colonia / ubicacion"
+                    className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
+                    style={{
+                      background: "#F2F2F7",
+                      border: "1px solid #E5E5EA",
+                    }}
+                  />
+
+                  {(templateType === "report_update" ||
+                    templateType === "monitoring_update") && (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => setTemplateChangeKind("mas_info")}
+                          className="px-2 py-2 rounded-xl text-[12px]"
+                          style={{
+                            background:
+                              templateChangeKind === "mas_info"
+                                ? "rgba(171,23,56,0.12)"
+                                : "#F2F2F7",
+                            border: `1px solid ${templateChangeKind === "mas_info" ? "rgba(171,23,56,0.35)" : "#E5E5EA"}`,
+                            color: templateChangeKind === "mas_info" ? "#AB1738" : "#636366",
+                            fontWeight: templateChangeKind === "mas_info" ? 700 : 600,
+                          }}
+                        >
+                          Mas informacion
+                        </button>
+                        <button
+                          onClick={() => setTemplateChangeKind("evidencia")}
+                          className="px-2 py-2 rounded-xl text-[12px]"
+                          style={{
+                            background:
+                              templateChangeKind === "evidencia"
+                                ? "rgba(171,23,56,0.12)"
+                                : "#F2F2F7",
+                            border: `1px solid ${templateChangeKind === "evidencia" ? "rgba(171,23,56,0.35)" : "#E5E5EA"}`,
+                            color: templateChangeKind === "evidencia" ? "#AB1738" : "#636366",
+                            fontWeight: templateChangeKind === "evidencia" ? 700 : 600,
+                          }}
+                        >
+                          Nueva evidencia
+                        </button>
+                      </div>
                       <input
                         value={templateChange}
                         onChange={(e) =>
                           setTemplateChange(e.target.value)
                         }
-                        placeholder="Qué cambió"
+                        placeholder="Detalle de la actualizacion (opcional)"
                         className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
                         style={{
                           background: "#F2F2F7",
                           border: "1px solid #E5E5EA",
                         }}
                       />
-                    )}
-                    <textarea
-                      value={templateSnippet}
-                      onChange={(e) =>
-                        setTemplateSnippet(e.target.value)
-                      }
-                      placeholder="Extracto del reporte"
-                      rows={3}
-                      className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none resize-none"
-                      style={{
-                        background: "#F2F2F7",
-                        border: "1px solid #E5E5EA",
-                      }}
-                    />
-                  </div>
-                )}
+                    </>
+                  )}
 
-                {templateType === "system_notice" && (
-                  <div className="flex flex-col gap-2 mb-3">
-                    <input
-                      value={templateSystemTitle}
-                      onChange={(e) =>
-                        setTemplateSystemTitle(e.target.value)
-                      }
-                      placeholder="Título del comunicado"
-                      className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
-                      style={{
-                        background: "#F2F2F7",
-                        border: "1px solid #E5E5EA",
-                      }}
-                    />
-                    <textarea
-                      value={templateSystemBody}
-                      onChange={(e) =>
-                        setTemplateSystemBody(e.target.value)
-                      }
-                      placeholder="Mensaje del comunicado"
-                      rows={3}
-                      className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none resize-none"
-                      style={{
-                        background: "#F2F2F7",
-                        border: "1px solid #E5E5EA",
-                      }}
-                    />
-                  </div>
-                )}
+                  <textarea
+                    value={templateSnippet}
+                    onChange={(e) =>
+                      setTemplateSnippet(e.target.value)
+                    }
+                    placeholder={
+                      templateType === "new_monitoring" ||
+                      templateType === "monitoring_update"
+                        ? "Descripcion principal del monitoreo"
+                        : "Descripcion principal del reporte"
+                    }
+                    rows={3}
+                    className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none resize-none"
+                    style={{
+                      background: "#F2F2F7",
+                      border: "1px solid #E5E5EA",
+                    }}
+                  />
+                </div>
 
                 <div
                   className="rounded-xl p-3 mb-3"
@@ -1925,4 +1986,3 @@ async function withTimeout<T>(
     ),
   ]);
 }
-

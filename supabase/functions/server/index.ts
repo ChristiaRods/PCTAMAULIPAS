@@ -97,15 +97,24 @@ routeGet("/health", (c) => {
 const VAPID_KV_KEY = "push:vapid_keys";
 const VAPID_SUBJECT = "mailto:proteccioncivil@tamaulipas.gob.mx";
 
-type PushTemplateType = "new_report" | "incident_update" | "system_notice";
+type PushTemplateType =
+  | "new_report"
+  | "report_update"
+  | "new_monitoring"
+  | "monitoring_update"
+  | "system_notice";
 
 type PushSendBody = PushPayload & {
   templateType?: PushTemplateType | string;
   tipoEmergencia?: string;
+  tipoMonitoreo?: string;
   prioridad?: string;
   ubicacion?: string;
+  municipio?: string;
+  localidad?: string;
   extracto?: string;
   cambio?: string;
+  changeKind?: string;
   message?: string;
   reportId?: string;
   linkedReportId?: string;
@@ -142,7 +151,22 @@ function toPushSafeText(value: string): string {
 function parseTemplateType(value: unknown): PushTemplateType | null {
   const normalized = compactText(value).toLowerCase();
   if (normalized === "new_report") return "new_report";
-  if (normalized === "incident_update") return "incident_update";
+  if (
+    normalized === "report_update" ||
+    normalized === "incident_update" ||
+    normalized === "update_report"
+  ) {
+    return "report_update";
+  }
+  if (normalized === "new_monitoring" || normalized === "monitoring_new") {
+    return "new_monitoring";
+  }
+  if (
+    normalized === "monitoring_update" ||
+    normalized === "update_monitoring"
+  ) {
+    return "monitoring_update";
+  }
   if (normalized === "system_notice") return "system_notice";
   return null;
 }
@@ -154,45 +178,95 @@ function normalizePriorityLabel(value: unknown): "Alta" | "Media" | "Baja" {
   return "Media";
 }
 
+function composeLocationShort(input: PushSendBody): string {
+  const municipio = compactText(input.municipio);
+  const ubicacion = compactText(input.ubicacion) || compactText(input.localidad);
+  if (ubicacion && municipio) {
+    return ubicacion.toLowerCase().includes(municipio.toLowerCase())
+      ? clipText(ubicacion, 70)
+      : clipText(`${municipio}, ${ubicacion}`, 70);
+  }
+  return clipText(ubicacion || municipio, 70);
+}
+
+function mergeLeadAndSnippet(lead: string, snippet: string, max = 118): string {
+  const leadText = compactText(lead);
+  const snippetText = compactText(snippet);
+  if (!leadText && !snippetText) return "";
+  if (!leadText) return clipText(snippetText, max);
+  if (!snippetText) return clipText(leadText, max);
+  return clipText(`${leadText}. ${snippetText}`, max);
+}
+
 function buildTemplateContent(input: PushSendBody & { templateType: PushTemplateType }): {
   title: string;
   body: string;
   tag: string;
 } {
   const tipoEmergencia = clipText(
-    compactText(input.tipoEmergencia) || clipText(compactText(input.title), 52) || "Emergencia",
-    52,
+    compactText(input.tipoEmergencia) ||
+      clipText(compactText(input.title), 45) ||
+      "Emergencia",
+    45,
+  );
+  const tipoMonitoreo = clipText(
+    compactText(input.tipoMonitoreo) ||
+      compactText(input.tipoEmergencia) ||
+      clipText(compactText(input.title), 45) ||
+      "Monitoreo",
+    45,
   );
   const prioridadLabel = normalizePriorityLabel(input.prioridad);
-  const ubicacion = clipText(compactText(input.ubicacion), 95);
-  const extracto = clipText(compactText(input.extracto) || compactText(input.body), 130);
-  const cambio = clipText(compactText(input.cambio), 120);
-  const message = clipText(compactText(input.message) || compactText(input.body), 180);
+  const ubicacion = composeLocationShort(input);
+  const extracto = clipText(
+    compactText(input.extracto) ||
+      compactText(input.message) ||
+      compactText(input.body),
+    120,
+  );
+  const cambio = clipText(compactText(input.cambio), 105);
+  const hasEvidence =
+    !!compactText(input.attachmentUrl) ||
+    compactText(input.changeKind).toLowerCase().includes("evidencia") ||
+    cambio.toLowerCase().includes("evidencia");
+  const updateKind = hasEvidence ? "(Nueva evidencia)" : "(Mas informacion)";
 
   if (input.templateType === "new_report") {
-    const title = `${tipoEmergencia} - Prioridad ${prioridadLabel}`;
-    const body = ubicacion && extracto
-      ? extracto.toLowerCase().startsWith(ubicacion.toLowerCase())
-        ? extracto
-        : `${ubicacion}. ${extracto}`
-      : (extracto || ubicacion || "Nuevo reporte recibido.");
-    return { title, body, tag: compactText(input.tag) || "report-template" };
+    const title = "Nuevo Reporte 911";
+    const lead = ubicacion
+      ? `${tipoEmergencia} - ${ubicacion}`
+      : `${tipoEmergencia} - Prioridad ${prioridadLabel}`;
+    const body = mergeLeadAndSnippet(lead, extracto, 118) || "Nuevo reporte recibido.";
+    return { title, body, tag: compactText(input.tag) || "report-new" };
   }
 
-  if (input.templateType === "incident_update") {
-    const title = `${tipoEmergencia} - Actualizacion`;
-    const base = cambio || "Se registró una actualización del incidente.";
-    const withLocation = ubicacion && !base.toLowerCase().includes(ubicacion.toLowerCase())
-      ? `${base} ${ubicacion}.`
-      : base;
-    const body = extracto && !withLocation.toLowerCase().includes(extracto.toLowerCase())
-      ? `${withLocation} ${extracto}`
-      : withLocation;
-    return { title, body: body.trim(), tag: compactText(input.tag) || "incident-update" };
+  if (input.templateType === "report_update") {
+    const title = "Actualizacion Reporte 911";
+    const lead = `${tipoEmergencia} - ${updateKind}${ubicacion ? ` ${ubicacion}` : ""}`;
+    const detail = cambio || extracto;
+    const body =
+      mergeLeadAndSnippet(lead, detail, 118) || `${tipoEmergencia} - ${updateKind}`;
+    return { title, body, tag: compactText(input.tag) || "report-update" };
+  }
+
+  if (input.templateType === "new_monitoring") {
+    const title = "Nuevo Monitoreo";
+    const lead = ubicacion ? `${tipoMonitoreo} - ${ubicacion}` : tipoMonitoreo;
+    const body = mergeLeadAndSnippet(lead, extracto, 118) || "Nuevo monitoreo registrado.";
+    return { title, body, tag: compactText(input.tag) || "monitoring-new" };
+  }
+
+  if (input.templateType === "monitoring_update") {
+    const title = "Actualizacion Monitoreo";
+    const lead = `${tipoMonitoreo} - ${updateKind}${ubicacion ? ` ${ubicacion}` : ""}`;
+    const detail = cambio || extracto;
+    const body =
+      mergeLeadAndSnippet(lead, detail, 118) || `${tipoMonitoreo} - ${updateKind}`;
+    return { title, body, tag: compactText(input.tag) || "monitoring-update" };
   }
 
   const title = clipText(compactText(input.title) || "Comunicado operativo", 65);
-  const body = message || "Hay una actualización del sistema.";
+  const body = extracto || "Hay una actualizacion del sistema.";
   return { title, body, tag: compactText(input.tag) || "system-notice" };
 }
 
@@ -961,13 +1035,8 @@ routePost("/reports", async (c) => {
         }
         const tipoEmergencia =
           typeof record.tipoEmergencia === "string" && record.tipoEmergencia.trim().length > 0
-            ? clip(record.tipoEmergencia, 52)
+            ? clip(record.tipoEmergencia, 45)
             : "Emergencia";
-        const prioridadRaw =
-          typeof record.prioridad === "string" ? record.prioridad.trim().toLowerCase() : "media";
-        const prioridadLabel =
-          prioridadRaw === "alta" ? "Alta" : prioridadRaw === "baja" ? "Baja" : "Media";
-        const titleText = `${tipoEmergencia} - Prioridad ${prioridadLabel}`;
 
         const ubicacion =
           typeof record.ubicacion === "string" ? record.ubicacion.trim() : "";
@@ -979,12 +1048,14 @@ routePost("/reports", async (c) => {
             : `${ubicacion}, ${municipio}`
           : (ubicacion || municipio);
         const locationText = clip(locationBase, 95);
-        const snippet = clip(primaryText, 130);
-        const bodyText = locationText && snippet
-          ? snippet.toLowerCase().startsWith(locationText.toLowerCase())
-            ? snippet
-            : `${locationText}. ${snippet}`
-          : (snippet || locationText || "Nuevo reporte recibido.");
+        const snippet = clip(primaryText, 120);
+        const { title: titleText, body: bodyText } = buildTemplateContent({
+          templateType: "new_report",
+          tipoEmergencia,
+          prioridad: typeof record.prioridad === "string" ? record.prioridad : "media",
+          ubicacion: locationText,
+          extracto: snippet,
+        });
         const pushTitleText = toPushSafeText(titleText);
         const pushBodyText = toPushSafeText(bodyText);
 
@@ -1458,5 +1529,3 @@ routePost("/settings/name/:roleId", async (c) => {
 });
 
 Deno.serve(app.fetch);
-
-
