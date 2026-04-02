@@ -543,6 +543,11 @@ export function AuditDetail() {
   const hiddenCount = trazabilidad.length - 4;
 
   const orderedVisualEvidence = getOrderedVisualEvidence(item);
+  const lightboxVisualMedia = orderedVisualEvidence.map((ev) => ({
+    kind: ev.kind,
+    src: ev.src,
+    nombre: ev.nombre,
+  }));
 
   // Collect all evidence images/files (for gallery)
   const galleryImages: { url: string; label: string }[] = [];
@@ -594,9 +599,12 @@ export function AuditDetail() {
   const totalEvidenceCount = galleryImages.length + galleryFiles.length;
 
   const openLightbox = (startIndex: number) => {
-    if (galleryImages.length > 0) {
+    if (lightboxVisualMedia.length > 0) {
       setLightboxData({
-        images: galleryImages.map((img) => img.url),
+        images: lightboxVisualMedia
+          .filter((media) => media.kind === "image")
+          .map((media) => media.src),
+        media: lightboxVisualMedia,
         title: item.titulo,
         timestamp: `${item.relativeTime} · ${item.timestamp}`,
         description: item.descripcion,
@@ -704,13 +712,8 @@ export function AuditDetail() {
                 className="relative aspect-square rounded-xl overflow-hidden border border-[#E5E5EA] cursor-pointer"
                 style={{ boxShadow: "0 2px 6px rgba(0,0,0,0.06)" }}
                 onClick={() => {
-                  setLightboxData({
-                    images: galleryImages.map(g => g.url),
-                    title: item.titulo,
-                    timestamp: item.timestamp,
-                    description: img.label,
-                    startIndex: i,
-                  });
+                  const mixedIndex = lightboxVisualMedia.findIndex((media) => media.src === img.url);
+                  openLightbox(mixedIndex >= 0 ? mixedIndex : i);
                 }}
               >
                 <ImageWithFallback src={img.url} alt={img.label} className="w-full h-full object-cover" />

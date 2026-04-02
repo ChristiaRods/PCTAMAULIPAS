@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { ChevronLeft, ChevronRight, X, Play } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 
 /* ─── Format timestamp to human-readable ─── */
@@ -19,10 +19,17 @@ function formatHumanTimestamp(raw: string): string {
 
 export interface LightboxData {
   images: string[];
+  media?: LightboxMedia[];
   title: string;
   timestamp: string;
   description: string;
   startIndex?: number;
+}
+
+export interface LightboxMedia {
+  kind: "image" | "video";
+  src: string;
+  nombre?: string;
 }
 
 interface ImageLightboxProps {
@@ -59,7 +66,30 @@ function getMidpoint(t1: React.Touch | Touch, t2: React.Touch | Touch) {
 }
 
 export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
-  const [currentIndex, setCurrentIndex] = useState(data.startIndex ?? 0);
+  const mediaItems = useMemo<LightboxMedia[]>(() => {
+    const mixed = (data.media || [])
+      .filter(
+        (item) =>
+          (item.kind === "image" || item.kind === "video") &&
+          typeof item.src === "string" &&
+          item.src.trim().length > 0,
+      )
+      .map((item) => ({
+        kind: item.kind,
+        src: item.src,
+        nombre: item.nombre,
+      }));
+
+    if (mixed.length > 0) return mixed;
+
+    return (data.images || [])
+      .filter((src) => typeof src === "string" && src.trim().length > 0)
+      .map((src) => ({ kind: "image" as const, src }));
+  }, [data.images, data.media]);
+
+  const [currentIndex, setCurrentIndex] = useState(
+    Math.min(Math.max(data.startIndex ?? 0, 0), Math.max(mediaItems.length - 1, 0)),
+  );
   const [expanded, setExpanded] = useState(false);
 
   /* ─── Slide transition state ─── */
@@ -71,6 +101,8 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
   const backdropRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const zoomWrapperRef = useRef<HTMLDivElement>(null);
+  const currentVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [isCurrentVideoPlaying, setIsCurrentVideoPlaying] = useState(false);
 
   /* ─── Refs: Swipe gesture (1-finger, zoom=1) ─── */
   const touchStartX = useRef(0);
@@ -108,8 +140,10 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
   const lastTapY = useRef(0);
   const tapTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const total = data.images.length;
+  const total = mediaItems.length;
   const hasMultiple = total > 1;
+  const currentMedia = mediaItems[currentIndex];
+  const isCurrentImage = currentMedia?.kind !== "video";
 
   /* ════════════════════════════════════════════════
      ZOOM TRANSFORM HELPERS
@@ -149,6 +183,21 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
 
   const isZoomed = () => zoomScale.current > 1.02;
 
+  const pauseCurrentVideo = useCallback(() => {
+    const video = currentVideoRef.current;
+    if (!video) return;
+    try {
+      video.pause();
+      video.currentTime = 0;
+    } catch (_err) {}
+    setIsCurrentVideoPlaying(false);
+  }, []);
+
+  const handleClose = useCallback(() => {
+    pauseCurrentVideo();
+    onClose();
+  }, [onClose, pauseCurrentVideo]);
+
   /* ════════════════════════════════════════════════
      NAVIGATION
      ════════════════════════════════════════════════ */
@@ -165,26 +214,32 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
   }, [isAnimating, total]);
 
   const goNext = useCallback(() => {
-    if (currentIndex < total - 1) slideTo(currentIndex + 1, "left");
-  }, [currentIndex, total, slideTo]);
+    if (currentIndex < total - 1) {
+      pauseCurrentVideo();
+      slideTo(currentIndex + 1, "left");
+    }
+  }, [currentIndex, total, slideTo, pauseCurrentVideo]);
 
   const goPrev = useCallback(() => {
-    if (currentIndex > 0) slideTo(currentIndex - 1, "right");
-  }, [currentIndex, slideTo]);
+    if (currentIndex > 0) {
+      pauseCurrentVideo();
+      slideTo(currentIndex - 1, "right");
+    }
+  }, [currentIndex, slideTo, pauseCurrentVideo]);
 
   /* Keyboard */
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (isZoomed()) { resetZoom(); return; }
-        onClose();
+        handleClose();
       }
       if (e.key === "ArrowRight") goNext();
       if (e.key === "ArrowLeft") goPrev();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose, goNext, goPrev, resetZoom]);
+  }, [handleClose, goNext, goPrev, resetZoom]);
 
   /* Lock body scroll */
   useEffect(() => {
@@ -193,8 +248,9 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  /* Reset expanded + zoom when changing image */
+  /* Reset expanded + zoom when changing media */
   useEffect(() => {
+    pauseCurrentVideo();
     setExpanded(false);
     zoomScale.current = 1;
     zoomTx.current = 0;
@@ -204,12 +260,25 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
       el.style.transition = "none";
       el.style.transform = "translate(0px, 0px) scale(1)";
     }
-  }, [currentIndex]);
+  }, [currentIndex, pauseCurrentVideo]);
+
+  useEffect(() => {
+    const maxIndex = Math.max(mediaItems.length - 1, 0);
+    setCurrentIndex((idx) => Math.min(Math.max(idx, 0), maxIndex));
+  }, [mediaItems.length]);
+
+  useEffect(() => {
+    const maxIndex = Math.max(mediaItems.length - 1, 0);
+    const target = Math.min(Math.max(data.startIndex ?? 0, 0), maxIndex);
+    setCurrentIndex(target);
+    pauseCurrentVideo();
+  }, [data.startIndex, mediaItems.length, pauseCurrentVideo]);
 
   /* ════════════════════════════════════════════════
      DOUBLE-TAP HANDLER
      ════════════════════════════════════════════════ */
   const handleDoubleTap = useCallback((sx: number, sy: number) => {
+    if (!isCurrentImage) return;
     const { cx, cy } = getContainerRect();
     if (isZoomed()) {
       // Zoom out to 1x
@@ -229,7 +298,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
       zoomTy.current = clamped.ty;
     }
     applyZoomTransform(true);
-  }, [getContainerRect, clampTranslate, applyZoomTransform]);
+  }, [getContainerRect, clampTranslate, applyZoomTransform, isCurrentImage]);
 
   /* ════════════════════════════════════════════════
      TOUCH HANDLERS
@@ -280,7 +349,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
     if (isAnimating) return;
 
     // ── 2 fingers → pinch ──
-    if (e.touches.length === 2) {
+    if (isCurrentImage && e.touches.length === 2) {
       isDragging.current = false;
       isPanning.current = false;
       isPinching.current = true;
@@ -303,7 +372,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
       touchStartY.current = t.clientY;
       touchStartTime.current = Date.now();
 
-      if (isZoomed()) {
+      if (isCurrentImage && isZoomed()) {
         // Pan mode
         isPanning.current = true;
         isDragging.current = false;
@@ -328,7 +397,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
     if (isAnimating) return;
 
     // ── Pinching (2 fingers) ──
-    if (isPinching.current && e.touches.length >= 2) {
+    if (isCurrentImage && isPinching.current && e.touches.length >= 2) {
       const newDist = getDistance(e.touches[0], e.touches[1]);
       const mid = getMidpoint(e.touches[0], e.touches[1]);
       const { cx, cy } = getContainerRect();
@@ -362,7 +431,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
     }
 
     // ── Panning (1 finger, zoomed) ──
-    if (isPanning.current && e.touches.length === 1) {
+    if (isCurrentImage && isPanning.current && e.touches.length === 1) {
       const t = e.touches[0];
       const dx = t.clientX - panStartX.current;
       const dy = t.clientY - panStartY.current;
@@ -399,7 +468,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
     if (isAnimating) return;
 
     // ── Pinch ended ──
-    if (isPinching.current) {
+    if (isCurrentImage && isPinching.current) {
       // If still have 1 finger remaining, transition to pan
       if (e.touches.length === 1) {
         isPinching.current = false;
@@ -450,7 +519,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
     }
 
     // ── Pan ended ──
-    if (isPanning.current) {
+    if (isCurrentImage && isPanning.current) {
       isPanning.current = false;
       // Check if it was a tap (for double-tap detection)
       const dx = Math.abs((e.changedTouches[0]?.clientX ?? 0) - touchStartX.current);
@@ -504,7 +573,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
             bd.style.transition = "background 0.25s ease";
             bd.style.background = "rgba(0,0,0,0)";
           }
-          setTimeout(onClose, 250);
+          setTimeout(handleClose, 250);
           axis.current = "none";
           dragX.current = 0;
           dragY.current = 0;
@@ -517,6 +586,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
         const didSwipe = absDx > SWIPE_X_THRESHOLD || (velocity > 0.4 && absDx > 15);
 
         if (didSwipe && dragX.current < 0 && currentIndex < total - 1) {
+          pauseCurrentVideo();
           const containerWidth = track.parentElement?.clientWidth || window.innerWidth;
           track.style.transition = `transform ${SLIDE_DURATION}ms cubic-bezier(0.25, 0.46, 0.45, 0.94)`;
           track.style.transform = `translateX(${-containerWidth}px)`;
@@ -528,6 +598,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
             setIsAnimating(false);
           }, SLIDE_DURATION);
         } else if (didSwipe && dragX.current > 0 && currentIndex > 0) {
+          pauseCurrentVideo();
           const containerWidth = track.parentElement?.clientWidth || window.innerWidth;
           track.style.transition = `transform ${SLIDE_DURATION}ms cubic-bezier(0.25, 0.46, 0.45, 0.94)`;
           track.style.transform = `translateX(${containerWidth}px)`;
@@ -546,7 +617,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
 
       // ── Double-tap detection (from normal 1-finger, not zoomed) ──
       const wasTap = axis.current === "none" && Math.abs(dragX.current) < 5 && Math.abs(dragY.current) < 5 && elapsed < 300;
-      if (wasTap || (axis.current === "none" && elapsed < 250)) {
+      if ((wasTap || (axis.current === "none" && elapsed < 250)) && isCurrentImage) {
         const now = Date.now();
         const tapX = e.changedTouches[0]?.clientX ?? touchStartX.current;
         const tapY = e.changedTouches[0]?.clientY ?? touchStartY.current;
@@ -594,9 +665,9 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
     ? data.description.slice(0, maxChars).trimEnd() + "..."
     : data.description;
 
-  /* ─── Adjacent images for 3-panel track ─── */
-  const prevImage = currentIndex > 0 ? data.images[currentIndex - 1] : null;
-  const nextImage = currentIndex < total - 1 ? data.images[currentIndex + 1] : null;
+  /* ─── Adjacent media for 3-panel track ─── */
+  const prevMedia = currentIndex > 0 ? mediaItems[currentIndex - 1] : null;
+  const nextMedia = currentIndex < total - 1 ? mediaItems[currentIndex + 1] : null;
 
   /* ─── Slide animation for button navigation ─── */
   const getSlideStyle = (): React.CSSProperties => {
@@ -652,7 +723,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
         }}
       >
         <button
-          onClick={onClose}
+          onClick={handleClose}
           className="w-10 h-10 flex items-center justify-center rounded-full active:bg-white/20 transition-colors pointer-events-auto"
           aria-label="Cerrar"
           style={{ pointerEvents: showChrome ? "auto" : "none" }}
@@ -695,17 +766,27 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
           }}
         >
           {/* Previous image (off-screen left) */}
-          {prevImage && (
+          {prevMedia && (
             <div
               className="absolute inset-0 flex items-center justify-center"
               style={{ transform: "translateX(-100%)" }}
             >
-              <ImageWithFallback
-                src={prevImage}
-                alt={`${data.title} — ${currentIndex}`}
-                className="w-full h-full object-contain select-none pointer-events-none"
-                draggable={false}
-              />
+              {prevMedia.kind === "image" ? (
+                <ImageWithFallback
+                  src={prevMedia.src}
+                  alt={`${data.title} — ${currentIndex}`}
+                  className="w-full h-full object-contain select-none pointer-events-none"
+                  draggable={false}
+                />
+              ) : (
+                <video
+                  src={prevMedia.src}
+                  className="w-full h-full object-contain bg-black select-none pointer-events-none"
+                  playsInline
+                  preload="metadata"
+                  muted
+                />
+              )}
             </div>
           )}
 
@@ -718,26 +799,85 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
               willChange: "transform",
             }}
           >
-            <ImageWithFallback
-              src={data.images[currentIndex]}
-              alt={`${data.title} — ${currentIndex + 1}`}
-              className="w-full h-full object-contain select-none pointer-events-none"
-              draggable={false}
-            />
+            {currentMedia?.kind === "video" ? (
+              <div className="relative w-full h-full flex items-center justify-center bg-black">
+                <video
+                  ref={currentVideoRef}
+                  src={currentMedia.src}
+                  className="w-full h-full object-contain bg-black"
+                  playsInline
+                  preload="metadata"
+                  controls
+                  onPointerDown={(e) => {
+                    if (isCurrentVideoPlaying) e.stopPropagation();
+                  }}
+                  onTouchStart={(e) => {
+                    if (isCurrentVideoPlaying) e.stopPropagation();
+                  }}
+                  onTouchMove={(e) => {
+                    if (isCurrentVideoPlaying) e.stopPropagation();
+                  }}
+                  onTouchEnd={(e) => {
+                    if (isCurrentVideoPlaying) e.stopPropagation();
+                  }}
+                  onPlay={() => setIsCurrentVideoPlaying(true)}
+                  onPause={() => setIsCurrentVideoPlaying(false)}
+                  onEnded={() => setIsCurrentVideoPlaying(false)}
+                />
+                {!isCurrentVideoPlaying && (
+                  <button
+                    type="button"
+                    aria-label="Reproducir video"
+                    className="absolute inset-0 z-20 flex items-center justify-center"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const video = currentVideoRef.current;
+                      if (!video) return;
+                      void video.play().catch(() => {});
+                    }}
+                  >
+                    <span
+                      className="w-14 h-14 rounded-full flex items-center justify-center"
+                      style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)" }}
+                    >
+                      <Play className="w-6 h-6 text-white fill-white ml-0.5" strokeWidth={1.5} />
+                    </span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <ImageWithFallback
+                src={currentMedia?.src || ""}
+                alt={`${data.title} — ${currentIndex + 1}`}
+                className="w-full h-full object-contain select-none pointer-events-none"
+                draggable={false}
+              />
+            )}
           </div>
 
           {/* Next image (off-screen right) */}
-          {nextImage && (
+          {nextMedia && (
             <div
               className="absolute inset-0 flex items-center justify-center"
               style={{ transform: "translateX(100%)" }}
             >
-              <ImageWithFallback
-                src={nextImage}
-                alt={`${data.title} — ${currentIndex + 2}`}
-                className="w-full h-full object-contain select-none pointer-events-none"
-                draggable={false}
-              />
+              {nextMedia.kind === "image" ? (
+                <ImageWithFallback
+                  src={nextMedia.src}
+                  alt={`${data.title} — ${currentIndex + 2}`}
+                  className="w-full h-full object-contain select-none pointer-events-none"
+                  draggable={false}
+                />
+              ) : (
+                <video
+                  src={nextMedia.src}
+                  className="w-full h-full object-contain bg-black select-none pointer-events-none"
+                  playsInline
+                  preload="metadata"
+                  muted
+                />
+              )}
             </div>
           )}
         </div>
@@ -804,7 +944,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
 
         {hasMultiple && (
           <div className="flex items-center justify-center gap-1.5 mt-3">
-            {data.images.map((_, i) => (
+            {mediaItems.map((_, i) => (
               <button
                 key={i}
                 onClick={() => setCurrentIndex(i)}
@@ -813,7 +953,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
                     ? "w-2 h-2 bg-white"
                     : "w-1.5 h-1.5 bg-white/40"
                 }`}
-                aria-label={`Imagen ${i + 1}`}
+                aria-label={`Evidencia ${i + 1}`}
               />
             ))}
           </div>

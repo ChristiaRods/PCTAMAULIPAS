@@ -1248,10 +1248,17 @@ export function SupervisorNotifications() {
   }, [navView]);
 
   const openLightbox = (item: FeedItem) => {
-    const imageMedia = getOrderedVisualMedia(item).filter((media) => media.kind === "image");
-    if (imageMedia.length > 0) {
+    const visualMedia = getOrderedVisualMedia(item);
+    if (visualMedia.length > 0) {
       setLightboxData({
-        images: imageMedia.map((media) => media.src),
+        images: visualMedia
+          .filter((media) => media.kind === "image")
+          .map((media) => media.src),
+        media: visualMedia.map((media) => ({
+          kind: media.kind,
+          src: media.src,
+          nombre: media.nombre,
+        })),
         title: item.titulo,
         timestamp: `${item.relativeTime} · ${item.timestamp}`,
         description: item.descripcion,
