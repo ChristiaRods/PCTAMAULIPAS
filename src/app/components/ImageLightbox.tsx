@@ -30,6 +30,7 @@ export interface LightboxMedia {
   kind: "image" | "video";
   src: string;
   nombre?: string;
+  posterSrc?: string;
 }
 
 interface ImageLightboxProps {
@@ -78,6 +79,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
         kind: item.kind,
         src: item.src,
         nombre: item.nombre,
+        posterSrc: item.posterSrc,
       }));
 
     if (mixed.length > 0) return mixed;
@@ -781,6 +783,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
               ) : (
                 <video
                   src={prevMedia.src}
+                  poster={prevMedia.posterSrc}
                   className="w-full h-full object-contain bg-black select-none pointer-events-none"
                   playsInline
                   preload="metadata"
@@ -804,6 +807,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
                 <video
                   ref={currentVideoRef}
                   src={currentMedia.src}
+                  poster={currentMedia.posterSrc}
                   className="w-full h-full object-contain bg-black"
                   playsInline
                   preload="metadata"
@@ -872,6 +876,7 @@ export function ImageLightbox({ data, onClose }: ImageLightboxProps) {
               ) : (
                 <video
                   src={nextMedia.src}
+                  poster={nextMedia.posterSrc}
                   className="w-full h-full object-contain bg-black select-none pointer-events-none"
                   playsInline
                   preload="metadata"

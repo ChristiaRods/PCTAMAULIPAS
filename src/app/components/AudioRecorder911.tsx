@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { Mic, Square, Trash2, AlertTriangle } from "lucide-react";
+import { Mic, Square, AlertTriangle } from "lucide-react";
 
 const GUINDO = "#AB1738";
 const GUINDO_DARK = "#8B1028";
@@ -360,6 +360,11 @@ export function AudioRecorder911({
         };
 
         onChange([...values, newNote]);
+        transcriptRef.current = "";
+        interimRef.current = "";
+        setLiveTranscript("");
+        setInterimText("");
+        setShowTranscriptFade(false);
       };
 
       recorder.start(250);
@@ -377,6 +382,7 @@ export function AudioRecorder911({
         recognition.lang = "es-MX";
 
         recognition.onresult = (event: SpeechRecognitionEvent) => {
+          if (!shouldRestartRecognitionRef.current) return;
           const finalSegments: string[] = [];
           const previewSegments: string[] = [];
           for (let i = 0; i < event.results.length; i++) {
@@ -570,17 +576,7 @@ export function AudioRecorder911({
   );
 
   const displayTranscript = liveTranscript.trim() || interimText.trim();
-  const statusCopy = !isMicSupported
-    ? "Grabacion no disponible en este navegador"
-    : isRequestingPermission
-      ? "Confirma el permiso para usar el microfono"
-      : !hasMicPermission
-        ? "Activa microfono para iniciar"
-        : isRecording
-          ? `Grabando... ${formatTime(elapsed)}. Suelta para guardar`
-          : canAddMore
-            ? "Manten presionado para dictar"
-            : `Limite alcanzado (${maxNotes})`;
+  const hasLiveTranscript = displayTranscript.trim().length > 0;
   const isPressWaveActive = isRecordButtonPressed || (isRecording && isPressingRef.current);
   const notesCounter = `${values.length}/${maxNotes}`;
 
@@ -735,9 +731,9 @@ export function AudioRecorder911({
             <div className="absolute inset-0 flex flex-col" style={{ userSelect: "none", WebkitUserSelect: "none" }}>
               <style>{`
                 @keyframes voice-wave {
-                  0% { transform: translate(-50%, -50%) scale(0.16); opacity: 0.96; }
-                  72% { opacity: 0.62; }
-                  100% { transform: translate(-50%, -50%) scale(10); opacity: 0; }
+                  0% { transform: translate(-50%, -50%) scale(0.22); opacity: 0.98; }
+                  70% { opacity: 0.65; }
+                  100% { transform: translate(-50%, -50%) scale(22); opacity: 0; }
                 }
                 .live-transcript-scroll::-webkit-scrollbar {
                   display: none;
@@ -774,7 +770,7 @@ export function AudioRecorder911({
                       background: "linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0))",
                     }}
                   />
-                  {showTranscriptFade && (
+                  {hasLiveTranscript && showTranscriptFade && (
                     <div
                       className="pointer-events-none absolute left-0 right-0 top-0 h-10 z-[2]"
                       style={{
@@ -782,150 +778,145 @@ export function AudioRecorder911({
                       }}
                     />
                   )}
-                  <div
-                    ref={transcriptScrollRef}
-                    onScroll={() => {
-                      const transcriptBox = transcriptScrollRef.current;
-                      if (!transcriptBox) return;
-                      const hasOverflow = transcriptBox.scrollHeight > transcriptBox.clientHeight + 4;
-                      const hasScrolled = transcriptBox.scrollTop > 2;
-                      const hasLiveText = displayTranscript.trim().length > 0;
-                      setShowTranscriptFade(hasLiveText && hasOverflow && hasScrolled);
-                    }}
-                    className="live-transcript-scroll relative z-[1] h-full overflow-y-auto pr-1"
-                    style={{
-                      maskImage: showTranscriptFade
-                        ? "linear-gradient(to bottom, transparent 0%, black 24%, black 100%)"
-                        : "none",
-                      WebkitMaskImage: showTranscriptFade
-                        ? "linear-gradient(to bottom, transparent 0%, black 24%, black 100%)"
-                        : "none",
-                      scrollbarWidth: "none",
-                      msOverflowStyle: "none",
-                    }}
-                  >
-                    <p className="text-[#1C1C1E] text-[18px] leading-[1.25] whitespace-pre-wrap break-words" style={{ fontWeight: 700 }}>
-                      {displayTranscript ||
-                        (isRecording
-                          ? "Escuchando tu dictado..."
-                          : "Manten presionado el boton central para dictar evidencias")}
-                    </p>
-                  </div>
+                  {hasLiveTranscript ? (
+                    <div
+                      ref={transcriptScrollRef}
+                      onScroll={() => {
+                        const transcriptBox = transcriptScrollRef.current;
+                        if (!transcriptBox) return;
+                        const hasOverflow = transcriptBox.scrollHeight > transcriptBox.clientHeight + 4;
+                        const hasScrolled = transcriptBox.scrollTop > 2;
+                        setShowTranscriptFade(hasOverflow && hasScrolled);
+                      }}
+                      className="live-transcript-scroll relative z-[1] h-full overflow-y-auto pr-1"
+                      style={{
+                        maskImage: showTranscriptFade
+                          ? "linear-gradient(to bottom, transparent 0%, black 24%, black 100%)"
+                          : "none",
+                        WebkitMaskImage: showTranscriptFade
+                          ? "linear-gradient(to bottom, transparent 0%, black 24%, black 100%)"
+                          : "none",
+                        scrollbarWidth: "none",
+                        msOverflowStyle: "none",
+                      }}
+                    >
+                      <p className="text-[#1C1C1E] text-[18px] leading-[1.25] whitespace-pre-wrap break-words" style={{ fontWeight: 700 }}>
+                        {displayTranscript}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="relative z-[1] h-full w-full flex items-center justify-center text-center">
+                      <p
+                        className="text-[#3A3A3C] text-[12px] italic"
+                        style={{ fontWeight: 400, letterSpacing: "0.01em" }}
+                      >
+                        Mantenga presionado el micrófono
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="px-4 pt-3 pb-2 flex justify-center">
                 <div
-                  className="relative w-full max-w-[560px] rounded-[30px] p-4 flex flex-col items-center overflow-hidden"
+                  className="relative w-full max-w-[560px] h-[188px] rounded-[30px] overflow-hidden flex items-center justify-center"
                   style={liquidShell}
                 >
                   <div
-                    className="pointer-events-none absolute left-4 right-4 top-0 h-8 rounded-b-[18px]"
+                    className="pointer-events-none absolute left-4 right-4 top-0 h-9 rounded-b-[20px]"
                     style={{
-                      background: "linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0))",
+                      background: "linear-gradient(180deg, rgba(255,255,255,0.64), rgba(255,255,255,0))",
                     }}
                   />
-                  <div
-                    className="relative z-[1] w-full max-w-[520px] h-[170px] overflow-hidden rounded-[24px] flex items-center justify-center"
+                  {isPressWaveActive && (
+                    <>
+                      <span
+                        className="absolute left-1/2 top-1/2 rounded-full"
+                        style={{
+                          width: 28,
+                          height: 28,
+                          border: "2.4px solid rgba(255,255,255,0.98)",
+                          animation: "voice-wave 2.25s linear infinite",
+                        }}
+                      />
+                      <span
+                        className="absolute left-1/2 top-1/2 rounded-full"
+                        style={{
+                          width: 28,
+                          height: 28,
+                          border: "2.4px solid rgba(255,255,255,0.92)",
+                          animation: "voice-wave 2.25s linear infinite",
+                          animationDelay: "350ms",
+                        }}
+                      />
+                      <span
+                        className="absolute left-1/2 top-1/2 rounded-full"
+                        style={{
+                          width: 28,
+                          height: 28,
+                          border: "2.4px solid rgba(255,255,255,0.84)",
+                          animation: "voice-wave 2.25s linear infinite",
+                          animationDelay: "700ms",
+                        }}
+                      />
+                      <span
+                        className="absolute left-1/2 top-1/2 rounded-full"
+                        style={{
+                          width: 28,
+                          height: 28,
+                          border: "2.4px solid rgba(255,255,255,0.76)",
+                          animation: "voice-wave 2.25s linear infinite",
+                          animationDelay: "1050ms",
+                        }}
+                      />
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onPointerDown={startPressRecording}
+                    onPointerUp={stopPressRecording}
+                    onPointerCancel={stopPressRecording}
+                    onContextMenu={(event) => event.preventDefault()}
+                    onDragStart={(event) => event.preventDefault()}
+                    disabled={!isMicSupported || !canAddMore || isRequestingPermission}
+                    className="relative z-[2] rounded-full flex items-center justify-center shadow-2xl"
                     style={{
-                      border: "1.5px solid rgba(255,255,255,0.38)",
-                      background: "linear-gradient(160deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))",
+                      width: 112,
+                      height: 112,
+                      border: "1px solid rgba(255,255,255,0.52)",
+                      background: isPressWaveActive
+                        ? "linear-gradient(155deg, #FFFFFF, #ECECF0)"
+                        : `linear-gradient(155deg, ${GUINDO}, ${GUINDO_DARK})`,
+                      transform: isRecordButtonPressed ? "scale(0.93) translateY(2px)" : "scale(1)",
+                      transition: "transform 120ms ease, filter 180ms ease, box-shadow 180ms ease, background 180ms ease",
+                      filter: isRecording ? "saturate(1.15) brightness(1.07)" : "none",
+                      boxShadow: isPressWaveActive
+                        ? "0 16px 34px rgba(255,255,255,0.34), inset 0 1px 0 rgba(255,255,255,0.9)"
+                        : isRecording
+                          ? "0 18px 38px rgba(171,23,56,0.45), inset 0 1px 0 rgba(255,255,255,0.35)"
+                          : "0 14px 30px rgba(17,24,39,0.4), inset 0 1px 0 rgba(255,255,255,0.25)",
+                      touchAction: "none",
+                      userSelect: "none",
+                      WebkitUserSelect: "none",
+                      WebkitTouchCallout: "none",
                     }}
+                    aria-label={isRecording ? "Suelta para detener grabacion" : "Manten presionado para grabar"}
                   >
-                    {isPressWaveActive && (
-                      <>
-                        <span
-                          className="absolute left-1/2 top-1/2 rounded-full"
-                          style={{
-                            width: 52,
-                            height: 52,
-                            border: "2.5px solid rgba(255,255,255,0.96)",
-                            animation: "voice-wave 2.1s linear infinite",
-                          }}
-                        />
-                        <span
-                          className="absolute left-1/2 top-1/2 rounded-full"
-                          style={{
-                            width: 52,
-                            height: 52,
-                            border: "2.5px solid rgba(255,255,255,0.9)",
-                            animation: "voice-wave 2.1s linear infinite",
-                            animationDelay: "320ms",
-                          }}
-                        />
-                        <span
-                          className="absolute left-1/2 top-1/2 rounded-full"
-                          style={{
-                            width: 52,
-                            height: 52,
-                            border: "2.5px solid rgba(255,255,255,0.82)",
-                            animation: "voice-wave 2.1s linear infinite",
-                            animationDelay: "640ms",
-                          }}
-                        />
-                        <span
-                          className="absolute left-1/2 top-1/2 rounded-full"
-                          style={{
-                            width: 52,
-                            height: 52,
-                            border: "2.5px solid rgba(255,255,255,0.75)",
-                            animation: "voice-wave 2.1s linear infinite",
-                            animationDelay: "960ms",
-                          }}
-                        />
-                      </>
+                    {isRecording ? (
+                      <Square
+                        className="w-8 h-8"
+                        strokeWidth={0}
+                        fill={isPressWaveActive ? GUINDO : "white"}
+                        style={{ color: isPressWaveActive ? GUINDO : "white" }}
+                      />
+                    ) : (
+                      <Mic
+                        className="w-9 h-9"
+                        strokeWidth={2}
+                        style={{ color: isPressWaveActive ? GUINDO : "white" }}
+                      />
                     )}
-                    <button
-                      type="button"
-                      onPointerDown={startPressRecording}
-                      onPointerUp={stopPressRecording}
-                      onPointerCancel={stopPressRecording}
-                      onContextMenu={(event) => event.preventDefault()}
-                      onDragStart={(event) => event.preventDefault()}
-                      disabled={!isMicSupported || !canAddMore || isRequestingPermission}
-                      className="relative z-[2] rounded-full flex items-center justify-center shadow-2xl"
-                      style={{
-                        width: 112,
-                        height: 112,
-                        border: "1px solid rgba(255,255,255,0.5)",
-                        background: isPressWaveActive
-                          ? "linear-gradient(155deg, #FFFFFF, #ECECF0)"
-                          : `linear-gradient(155deg, ${GUINDO}, ${GUINDO_DARK})`,
-                        transform: isRecordButtonPressed ? "scale(0.93) translateY(2px)" : "scale(1)",
-                        transition: "transform 120ms ease, filter 180ms ease, box-shadow 180ms ease, background 180ms ease",
-                        filter: isRecording ? "saturate(1.15) brightness(1.07)" : "none",
-                        boxShadow: isPressWaveActive
-                          ? "0 16px 34px rgba(255,255,255,0.32), inset 0 1px 0 rgba(255,255,255,0.85)"
-                          : isRecording
-                            ? "0 18px 38px rgba(171,23,56,0.45), inset 0 1px 0 rgba(255,255,255,0.35)"
-                            : "0 14px 30px rgba(17,24,39,0.4), inset 0 1px 0 rgba(255,255,255,0.25)",
-                        touchAction: "none",
-                        userSelect: "none",
-                        WebkitUserSelect: "none",
-                        WebkitTouchCallout: "none",
-                      }}
-                      aria-label={isRecording ? "Suelta para detener grabacion" : "Manten presionado para grabar"}
-                    >
-                      {isRecording ? (
-                        <Square
-                          className="w-8 h-8"
-                          strokeWidth={0}
-                          fill={isPressWaveActive ? GUINDO : "white"}
-                          style={{ color: isPressWaveActive ? GUINDO : "white" }}
-                        />
-                      ) : (
-                        <Mic
-                          className="w-9 h-9"
-                          strokeWidth={2}
-                          style={{ color: isPressWaveActive ? GUINDO : "white" }}
-                        />
-                      )}
-                    </button>
-                  </div>
-
-                  <p className="relative z-[1] mt-1 text-center text-white/92 text-[12px]" style={{ fontWeight: 600 }}>
-                    {statusCopy}
-                  </p>
+                  </button>
                 </div>
               </div>
 
@@ -949,16 +940,10 @@ export function AudioRecorder911({
                     </span>
                   </div>
 
-                  <div className="relative z-[1] px-3 pb-3 pt-3 space-y-2.5 flex-1 min-h-0 overflow-y-auto">
+                  <div className="relative z-[1] px-4 pb-4 pt-3 flex-1 min-h-0 overflow-y-auto">
                     {values.length === 0 ? (
-                      <div
-                        className="rounded-xl px-3 py-3 border"
-                        style={{
-                          background: "linear-gradient(150deg, rgba(255,255,255,0.8), rgba(246,246,249,0.66))",
-                          borderColor: "rgba(255,255,255,0.7)",
-                        }}
-                      >
-                        <p className="text-[13px] text-[#636366]">
+                      <div className="py-4">
+                        <p className="text-[14px] text-[#636366]">
                           Aun no hay notas. Mantener presionado el boton central para empezar.
                         </p>
                       </div>
@@ -968,35 +953,34 @@ export function AudioRecorder911({
                         return (
                           <div
                             key={note.id}
-                            className="rounded-xl p-3 border"
+                            className="py-3.5"
                             style={{
-                              background: "linear-gradient(150deg, rgba(255,255,255,0.88), rgba(247,247,250,0.72))",
-                              borderColor: "rgba(255,255,255,0.78)",
-                              boxShadow: "0 10px 22px rgba(15,23,42,0.12)",
+                              borderBottom:
+                                idx < values.length - 1
+                                  ? "1px solid rgba(255,255,255,0.3)"
+                                  : "none",
                             }}
                           >
-                            <div className="flex items-center gap-2 mb-2">
-                              <div
-                                className="w-7 h-7 rounded-full flex items-center justify-center"
-                                style={{ background: "rgba(171,23,56,0.12)" }}
-                              >
-                                <Mic className="w-3.5 h-3.5 text-[#AB1738]" strokeWidth={2} />
-                              </div>
+                            <div className="flex items-start justify-between gap-3 mb-2.5">
                               <div className="flex-1 min-w-0">
-                                <p className="text-[14px] text-[#1C1C1E]" style={{ fontWeight: 700 }}>
+                                <p className="text-[16px] text-[#1C1C1E] leading-tight" style={{ fontWeight: 700 }}>
                                   {values.length > 1
                                     ? `Descripcion del reporte ${idx + 1}`
                                     : "Descripcion del reporte"}
                                 </p>
-                                <p className="text-[12px] text-[#6E6E73]">Duracion: {formatTime(note.durationSec)}</p>
+                                <p className="text-[13px] text-[#6E6E73] mt-1">Duracion: {formatTime(note.durationSec)}</p>
                               </div>
                               <button
                                 onClick={() => deleteNote(note.id)}
                                 type="button"
-                                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg active:opacity-60"
-                                style={{ background: "rgba(220,38,38,0.09)", minHeight: 38 }}
+                                className="px-3 py-1.5 rounded-full active:opacity-60"
+                                style={{
+                                  minHeight: 34,
+                                  background: "linear-gradient(145deg, rgba(255,255,255,0.7), rgba(245,245,248,0.48))",
+                                  border: "1px solid rgba(255,255,255,0.82)",
+                                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
+                                }}
                               >
-                                <Trash2 className="w-3.5 h-3.5 text-[#DC2626]" strokeWidth={1.8} />
                                 <span className="text-[12px] text-[#DC2626]" style={{ fontWeight: 700 }}>
                                   Eliminar
                                 </span>
@@ -1004,44 +988,38 @@ export function AudioRecorder911({
                             </div>
 
                             {audioUrl && (
-                              <audio controls preload="metadata" src={audioUrl} className="w-full h-9 mb-2" />
+                              <audio
+                                controls
+                                preload="metadata"
+                                src={audioUrl}
+                                className="w-full h-10 mb-2.5"
+                                style={{
+                                  borderRadius: 10,
+                                  background: "rgba(255,255,255,0.45)",
+                                }}
+                              />
                             )}
 
-                            <div
-                              className="rounded-lg px-2.5 py-2 border"
-                              style={{
-                                borderColor: "rgba(209,209,214,0.84)",
-                                background: "linear-gradient(150deg, rgba(252,252,253,0.95), rgba(248,248,251,0.8))",
-                              }}
-                            >
-                              <p
-                                className="text-[11px] text-[#8E8E93] mb-1 uppercase tracking-wider"
-                                style={{ fontWeight: 700 }}
-                              >
-                                Transcripcion
+                            {note.transcript ? (
+                              <p className="text-[17px] text-white leading-[1.48] whitespace-pre-wrap">
+                                {note.transcript}
                               </p>
-
-                              {note.transcript ? (
-                                <p className="text-[13px] text-[#1C1C1E]" style={{ lineHeight: 1.5 }}>
-                                  {note.transcript}
+                            ) : note.transcriptionStatus === "pending" ||
+                              note.transcriptionStatus === "processing" ? (
+                              <div className="flex items-start gap-2">
+                                <AlertTriangle className="w-4 h-4 text-[#A16207] shrink-0 mt-0.5" strokeWidth={2} />
+                                <p className="text-[14px] text-white/88 italic leading-[1.45]">
+                                  Transcripcion en proceso. El audio ya quedo guardado.
                                 </p>
-                              ) : note.transcriptionStatus === "pending" ||
-                                note.transcriptionStatus === "processing" ? (
-                                <div className="flex items-start gap-2">
-                                  <AlertTriangle className="w-3.5 h-3.5 text-[#A16207] shrink-0 mt-0.5" strokeWidth={2} />
-                                  <p className="text-[12px] text-[#6E6E73] italic">
-                                    Transcripcion en proceso. El audio ya quedo guardado.
-                                  </p>
-                                </div>
-                              ) : (
-                                <div className="flex items-start gap-2">
-                                  <AlertTriangle className="w-3.5 h-3.5 text-[#F59E0B] shrink-0 mt-0.5" strokeWidth={2} />
-                                  <p className="text-[12px] text-[#6E6E73] italic">
-                                    Sin transcripcion. El audio se enviara igualmente.
-                                  </p>
-                                </div>
-                              )}
-                            </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-start gap-2">
+                                <AlertTriangle className="w-4 h-4 text-[#F59E0B] shrink-0 mt-0.5" strokeWidth={2} />
+                                <p className="text-[14px] text-white/88 italic leading-[1.45]">
+                                  Sin transcripcion. El audio se enviara igualmente.
+                                </p>
+                              </div>
+                            )}
                           </div>
                         );
                       })

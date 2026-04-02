@@ -12,6 +12,7 @@ export interface TrazabilidadItem {
   mensaje: string;
   audioSrc?: string;
   videoSrc?: string;
+  videoPosterSrc?: string;
   transcript?: string;
 }
 
@@ -56,6 +57,7 @@ export interface EvidenciaMonitoreo {
   kind: "image" | "pdf" | "audio" | "video";
   nombre: string;
   src: string;
+  posterSrc?: string;
   transcript?: string;
 }
 
@@ -1025,6 +1027,7 @@ export function getFeedItemById(id: string): FeedItem | undefined {
       mediaItems?: Array<{
         type?: "image" | "video";
         dataUrl?: string;
+        posterDataUrl?: string;
       }>;
       imageDataUrls?: string[];
       imageDataUrl?: string | null;
@@ -1147,14 +1150,27 @@ export function getFeedItemById(id: string): FeedItem | undefined {
       baja: "Registrado",
     };
 
-    const mediaItems = (Array.isArray(found.mediaItems) ? found.mediaItems : [])
-      .map((item) => {
+    type LocalVisualMediaItem = {
+      kind: "image" | "video";
+      src: string;
+      posterSrc?: string;
+    };
+
+    const mediaItems: LocalVisualMediaItem[] = (Array.isArray(found.mediaItems) ? found.mediaItems : [])
+      .map((item): LocalVisualMediaItem | null => {
         const kind = item?.type === "video" ? "video" : "image";
         const src = typeof item?.dataUrl === "string" ? item.dataUrl.trim() : "";
         if (!src || src === IMAGE_LOCAL_ONLY) return null;
+        const posterSrc =
+          kind === "video" &&
+          typeof item?.posterDataUrl === "string" &&
+          item.posterDataUrl.trim().length > 0
+            ? item.posterDataUrl.trim()
+            : undefined;
+        if (posterSrc) return { kind, src, posterSrc };
         return { kind, src };
       })
-      .filter((item): item is { kind: "image" | "video"; src: string } => item !== null);
+      .filter((item): item is LocalVisualMediaItem => item !== null);
 
     if (mediaItems.length === 0) {
       const fallbackImages = (Array.isArray(found.imageDataUrls) ? found.imageDataUrls : [])
@@ -1250,6 +1266,7 @@ export function getFeedItemById(id: string): FeedItem | undefined {
           hora,
           mensaje: `Video ${idx + 1} adjunto desde dispositivo móvil.`,
           videoSrc: item.src,
+          videoPosterSrc: item.posterSrc,
         });
       });
 
@@ -1288,6 +1305,7 @@ export function getFeedItemById(id: string): FeedItem | undefined {
         kind: "video",
         nombre: `video_${videoSeq}.mp4`,
         src: item.src,
+        posterSrc: item.posterSrc,
       };
     });
 

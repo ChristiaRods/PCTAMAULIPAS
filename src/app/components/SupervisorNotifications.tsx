@@ -137,6 +137,7 @@ type VisualFeedMedia = {
   kind: "image" | "video";
   src: string;
   nombre?: string;
+  posterSrc?: string;
 };
 
 function getOrderedVisualMedia(item: FeedItem): VisualFeedMedia[] {
@@ -146,6 +147,7 @@ function getOrderedVisualMedia(item: FeedItem): VisualFeedMedia[] {
       kind: ev.kind as "image" | "video",
       src: ev.src,
       nombre: ev.nombre,
+      posterSrc: ev.posterSrc,
     }))
     .filter((ev) => typeof ev.src === "string" && ev.src.trim().length > 0);
   if (fromEvidence.length > 0) return fromEvidence;
@@ -268,6 +270,7 @@ function FeedCard({ item, onOpen, onImageClick }: { item: FeedItem; onOpen: () =
               >
                 <video
                   src={primaryVisual?.src}
+                  poster={primaryVisual?.posterSrc}
                   className="w-full h-52 object-cover bg-[#1C1C1E]"
                   controls
                   playsInline
@@ -1258,6 +1261,7 @@ export function SupervisorNotifications() {
           kind: media.kind,
           src: media.src,
           nombre: media.nombre,
+          posterSrc: media.posterSrc,
         })),
         title: item.titulo,
         timestamp: `${item.relativeTime} · ${item.timestamp}`,

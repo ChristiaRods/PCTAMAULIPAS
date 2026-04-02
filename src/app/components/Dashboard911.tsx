@@ -221,6 +221,105 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+function extractVideoPosterFromFile(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const tempUrl = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    let finished = false;
+    let fallbackTimer = 0;
+
+    const finish = (poster: string | null) => {
+      if (finished) return;
+      finished = true;
+      if (fallbackTimer) window.clearTimeout(fallbackTimer);
+      try {
+        video.pause();
+      } catch {
+        // ignore
+      }
+      try {
+        video.removeAttribute("src");
+        video.load();
+      } catch {
+        // ignore
+      }
+      URL.revokeObjectURL(tempUrl);
+      resolve(poster);
+    };
+
+    const captureFrame = () => {
+      if (!video.videoWidth || !video.videoHeight) {
+        finish(null);
+        return;
+      }
+
+      const maxWidth = 640;
+      const scale = Math.min(1, maxWidth / video.videoWidth);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        finish(null);
+        return;
+      }
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      try {
+        const poster = canvas.toDataURL("image/jpeg", 0.82);
+        finish(poster);
+      } catch {
+        finish(null);
+      }
+    };
+
+    video.preload = "auto";
+    video.muted = true;
+    video.playsInline = true;
+    video.src = tempUrl;
+    fallbackTimer = window.setTimeout(() => {
+      if (!finished) finish(null);
+    }, 1800);
+
+    video.addEventListener(
+      "loadedmetadata",
+      () => {
+        if (!Number.isFinite(video.duration) || video.duration <= 0) {
+          captureFrame();
+          return;
+        }
+        // Move a little forward to avoid codecs that decode the first frame as black.
+        const targetTime = Math.min(Math.max(video.duration * 0.02, 0.05), Math.max(video.duration - 0.01, 0));
+        try {
+          video.currentTime = targetTime;
+        } catch {
+          captureFrame();
+        }
+      },
+      { once: true },
+    );
+    video.addEventListener("seeked", captureFrame, { once: true });
+    video.addEventListener(
+      "loadeddata",
+      () => {
+        // Fallback when seeking is not available.
+        if (!finished && (!Number.isFinite(video.duration) || video.duration <= 0)) {
+          captureFrame();
+        }
+      },
+      { once: true },
+    );
+    video.addEventListener(
+      "error",
+      () => {
+        finish(null);
+      },
+      { once: true },
+    );
+  });
+}
+
 /* ─── Shared marker icon ─── */
 function makePinIcon() {
   return L.divIcon({
@@ -1190,43 +1289,66 @@ function ReportFormView() {
 
   /* Multi-media handling */
   const handleMediaSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files ?? []);
       if (files.length === 0) return;
       e.target.value = "";
 
-      setMediaItems((prev) => {
-        const remaining = MAX_MEDIA - prev.length;
-        if (remaining <= 0) return prev;
-        const toProcess = files.slice(0, remaining);
-        const newItems: MediaItem[] = [];
-
-        toProcess.forEach((file) => {
+      const processedItems = await Promise.all(
+        files.map(async (file): Promise<MediaItem | null> => {
           const isVideo = file.type.startsWith("video/");
           if (isVideo) {
-            // Videos: use blob URL (local display only)
             const url = URL.createObjectURL(file);
-            newItems.push({ type: "video", dataUrl: url });
-          } else {
-            // Images: base64
-            if (file.size > 8 * 1024 * 1024) return; // skip >8MB images
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-              const result = ev.target?.result as string;
-              if (result) {
-                setMediaItems((cur) => {
-                  if (cur.length >= MAX_MEDIA) return cur;
-                  return [...cur, { type: "image", dataUrl: result }];
-                });
-              }
+            const posterDataUrl = await extractVideoPosterFromFile(file);
+            return {
+              type: "video",
+              dataUrl: url,
+              posterDataUrl: posterDataUrl || undefined,
+              mimeType: file.type || undefined,
+              fileName: file.name || undefined,
             };
-            reader.readAsDataURL(file);
+          }
+
+          // Images: base64
+          if (file.size > 8 * 1024 * 1024) return null; // skip >8MB images
+          try {
+            const dataUrl = await blobToDataUrl(file);
+            return {
+              type: "image",
+              dataUrl,
+              mimeType: file.type || undefined,
+              fileName: file.name || undefined,
+            };
+          } catch {
+            return null;
+          }
+        }),
+      );
+
+      const nextItems = processedItems.filter(
+        (item): item is MediaItem => item !== null,
+      );
+
+      setMediaItems((prev) => {
+        const remaining = MAX_MEDIA - prev.length;
+        if (remaining <= 0) {
+          nextItems.forEach((item) => {
+            if (item.type === "video" && item.dataUrl.startsWith("blob:")) {
+              URL.revokeObjectURL(item.dataUrl);
+            }
+          });
+          return prev;
+        }
+
+        const accepted = nextItems.slice(0, remaining);
+        const discarded = nextItems.slice(remaining);
+        discarded.forEach((item) => {
+          if (item.type === "video" && item.dataUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(item.dataUrl);
           }
         });
 
-        // Video items added synchronously
-        if (newItems.length === 0) return prev;
-        return [...prev, ...newItems].slice(0, MAX_MEDIA);
+        return [...prev, ...accepted];
       });
     },
     [],

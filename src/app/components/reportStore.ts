@@ -19,6 +19,7 @@ export interface SubmittedAudioNote {
 export interface MediaItem {
   type: "image" | "video";
   dataUrl: string;
+  posterDataUrl?: string;
   mimeType?: string;
   fileName?: string;
 }
@@ -153,6 +154,11 @@ function normalizeMediaItems(report: SubmittedReport): MediaItem[] {
           return {
             type: nextType,
             dataUrl: nextDataUrl,
+            posterDataUrl:
+              typeof item?.posterDataUrl === "string" &&
+              item.posterDataUrl.trim().length > 0
+                ? item.posterDataUrl.trim()
+                : undefined,
             mimeType:
               typeof item?.mimeType === "string" && item.mimeType.trim().length > 0
                 ? item.mimeType.trim()
@@ -482,6 +488,7 @@ export async function saveReport(
   const uploadedMediaItems: MediaItem[] = [];
   for (const item of reportToSave.mediaItems || []) {
     let src = item.dataUrl;
+    let posterSrc = item.posterDataUrl;
     if (src && (src.startsWith("data:") || src.startsWith("blob:"))) {
       const uploadedUrl = await uploadEvidenceSource(
         src,
@@ -493,7 +500,26 @@ export async function saveReport(
       else if (item.type === "video") failedVideoUploads += 1;
       else failedImageUploads += 1;
     }
-    uploadedMediaItems.push({ ...item, dataUrl: src });
+
+    if (
+      item.type === "video" &&
+      posterSrc &&
+      (posterSrc.startsWith("data:") || posterSrc.startsWith("blob:"))
+    ) {
+      const uploadedPosterUrl = await uploadEvidenceSource(
+        posterSrc,
+        "reports",
+        "image/jpeg",
+        `video-poster-${Date.now()}`,
+      );
+      if (uploadedPosterUrl) posterSrc = uploadedPosterUrl;
+    }
+
+    uploadedMediaItems.push({
+      ...item,
+      dataUrl: src,
+      posterDataUrl: posterSrc,
+    });
   }
   reportToSave.mediaItems = uploadedMediaItems;
 
@@ -670,6 +696,11 @@ export function createReport(data: {
       return {
         type: nextType,
         dataUrl: nextDataUrl,
+        posterDataUrl:
+          typeof item?.posterDataUrl === "string" &&
+          item.posterDataUrl.trim().length > 0
+            ? item.posterDataUrl.trim()
+            : undefined,
         mimeType:
           typeof item?.mimeType === "string" && item.mimeType.trim().length > 0
             ? item.mimeType.trim()
@@ -808,6 +839,7 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
     .map((item) => ({
       kind: item.type,
       src: item.dataUrl,
+      posterSrc: item.type === "video" ? item.posterDataUrl : undefined,
     }));
   const images: string[] = visualMedia
     .filter((item) => item.kind === "image")
@@ -864,6 +896,7 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
         hora,
         mensaje: `Video ${idx + 1} adjunto desde dispositivo movil.`,
         videoSrc: item.src,
+        videoPosterSrc: item.posterSrc,
       });
     });
 
@@ -908,6 +941,7 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
       kind: "video" as const,
       nombre: `video_${videoSeq}.mp4`,
       src: item.src,
+      posterSrc: item.posterSrc,
     };
   });
 

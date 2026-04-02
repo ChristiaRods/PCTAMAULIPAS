@@ -169,6 +169,7 @@ function ThreadReply({ entry, isLast }: { entry: TrazabilidadItem; isLast: boole
                 playsInline
                 preload="metadata"
                 src={entry.videoSrc}
+                poster={entry.videoPosterSrc}
                 className="w-full rounded-lg bg-[#1C1C1E]"
               />
             </div>
@@ -203,6 +204,7 @@ type VisualEvidence = {
   kind: "image" | "video";
   src: string;
   nombre: string;
+  posterSrc?: string;
 };
 
 function getOrderedVisualEvidence(item: FeedItem): VisualEvidence[] {
@@ -212,6 +214,7 @@ function getOrderedVisualEvidence(item: FeedItem): VisualEvidence[] {
       kind: ev.kind as "image" | "video",
       src: ev.src,
       nombre: ev.nombre,
+      posterSrc: ev.posterSrc,
     }))
     .filter((ev) => typeof ev.src === "string" && ev.src.trim().length > 0);
   if (fromEvidence.length > 0) return fromEvidence;
@@ -275,6 +278,7 @@ function Reporte911Detail({ item, onImageClick }: { item: Reporte911; onImageCli
             >
               <video
                 src={primaryVisual.src}
+                poster={primaryVisual.posterSrc}
                 className="w-full h-48 object-cover bg-[#1C1C1E]"
                 controls
                 playsInline
@@ -547,6 +551,7 @@ export function AuditDetail() {
     kind: ev.kind,
     src: ev.src,
     nombre: ev.nombre,
+    posterSrc: ev.posterSrc,
   }));
 
   // Collect all evidence images/files (for gallery)
@@ -555,6 +560,7 @@ export function AuditDetail() {
     kind: string;
     nombre: string;
     src: string;
+    posterSrc?: string;
     transcript?: string;
   }[] = [];
 
@@ -581,6 +587,7 @@ export function AuditDetail() {
           kind: "video",
           nombre: ev.nombre,
           src: ev.src,
+          posterSrc: ev.posterSrc,
         });
       }
     });
@@ -775,6 +782,7 @@ export function AuditDetail() {
                         playsInline
                         preload="metadata"
                         src={f.src}
+                        poster={f.posterSrc}
                         className="w-full bg-[#1C1C1E]"
                       />
                       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
