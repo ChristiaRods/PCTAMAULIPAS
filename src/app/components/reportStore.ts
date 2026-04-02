@@ -16,6 +16,11 @@ export interface SubmittedAudioNote {
   transcribedAt?: string | null;
 }
 
+export interface MediaItem {
+  type: "image" | "video";
+  dataUrl: string;
+}
+
 export interface SubmittedReport {
   id: string;
   folio: string;
@@ -504,8 +509,9 @@ export function createReport(data: {
   municipio: string;
   descripcion: string;
   prioridad: "alta" | "media" | "baja";
-  reportadoPor: string;
-  imageDataUrls: string[];
+  reportadoPor?: string;
+  imageDataUrls?: string[];
+  mediaItems?: MediaItem[];
   imageDataUrl?: string | null;
   audioNotes?: SubmittedAudioNote[];
   audioDataUrl?: string | null;
@@ -525,7 +531,10 @@ export function createReport(data: {
   const audioNotes = normalizeAudioNotes(data.audioNotes);
   const firstTranscript = audioNotes.map((n) => n.transcript.trim()).find((text) => text.length > 0) || null;
   const firstAudioSrc = audioNotes.find((n) => n.src)?.src || null;
-  const imageDataUrls = (Array.isArray(data.imageDataUrls) ? data.imageDataUrls : [])
+  const mediaImageDataUrls = (Array.isArray(data.mediaItems) ? data.mediaItems : [])
+    .filter((item) => item && item.type === "image" && typeof item.dataUrl === "string")
+    .map((item) => item.dataUrl);
+  const imageDataUrls = (Array.isArray(data.imageDataUrls) ? data.imageDataUrls : mediaImageDataUrls)
     .filter((url) => typeof url === "string" && url.trim().length > 0);
 
   return {

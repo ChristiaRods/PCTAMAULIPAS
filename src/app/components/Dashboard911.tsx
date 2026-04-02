@@ -1,14 +1,15 @@
 import { AppHeader } from "./AppHeader";
-import { useNavigate } from "./RouterContext";
+import { SettingsView } from "./SettingsView";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Send,
   MapPin,
   ChevronDown,
+  ChevronRight,
   Camera,
   Image as ImageIcon,
   Trash2,
   CheckCircle2,
-  Clock,
   AlertTriangle,
   Droplets,
   Flame,
@@ -20,16 +21,21 @@ import {
   CircleDot,
   Crosshair,
   Loader2,
-  Navigation,
   Hash,
   Building2,
   MapPinned,
   ChevronUp,
-  Eye,
   X,
   LocateFixed,
   Check,
+  Mic,
+  FileText,
 } from "lucide-react";
+import {
+  VoiceDescriptionInput,
+  buildActivityMessage,
+  type VoiceNote,
+} from "./VoiceDescriptionInput";
 import {
   useState,
   useRef,
@@ -43,63 +49,13 @@ import {
   getSubmittedReports,
   fetchServerReports,
   type SubmittedReport,
+  type MediaItem,
 } from "./reportStore";
+import { getOperatorName } from "./Home911";
+import { useNavigate } from "./RouterContext";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { PullToRefresh } from "./PullToRefresh";
-import { AudioRecorder911, type AudioValue } from "./AudioRecorder911";
-
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-function buildFinalDescription(
-  manualText: string,
-  audioNotes: AudioValue[],
-): string {
-  const cleanManual = manualText.trim();
-  const transcripts = audioNotes
-    .map((note) => note.transcript.trim())
-    .filter((text) => text.length > 0);
-
-  const appendSecondIfShort = (base: string): string => {
-    let result = base.trim();
-    if (result.length < 100 && transcripts.length > 0) {
-      const first = transcripts[0];
-      if (first && !result.includes(first)) {
-        result = `${result} ${first}`.trim();
-      }
-    }
-    if (result.length < 100 && transcripts.length > 1) {
-      const second = transcripts[1];
-      if (second && !result.includes(second)) {
-        result = `${result} ${second}`.trim();
-      }
-    }
-    return result;
-  };
-
-  if (cleanManual) {
-    return appendSecondIfShort(cleanManual);
-  }
-
-  if (transcripts.length > 0) {
-    return appendSecondIfShort(transcripts[0]);
-  }
-
-  if (audioNotes.length > 0) {
-    return "Nota de voz enviada por personal de campo.";
-  }
-
-  return "";
-}
-
-const MAX_REPORT_IMAGES = 5;
 
 /* ─── Constants ─── */
 const TIPOS_EMERGENCIA = [
@@ -633,12 +589,28 @@ type TabId = "reportes" | "push";
 
 /* ─── Main Component ─── */
 export function Dashboard911() {
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabId>("reportes");
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
-      <AppHeader title="Personal de Campo" showBack={false} onSettingsPress={() => navigate("/settings")} />
+    <>
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div
+            key="settings-overlay"
+            className="fixed inset-0 z-[100] bg-[#F2F2F7] flex flex-col overflow-y-auto"
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+          >
+            <SettingsView onClose={() => setShowSettings(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
+        <AppHeader title="Personal de Campo · 911" subtitle={getOperatorName()} showBack={false} onSettingsPress={() => setShowSettings(true)} />
 
       <div
         className="flex gap-1 mx-4 mt-3 mb-2 p-1 rounded-xl"
@@ -684,64 +656,93 @@ export function Dashboard911() {
       {activeTab === "reportes" && <ReportFormView />}
       {activeTab === "push" && <PushNotificationManager />}
     </div>
+    </>
   );
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   IMAGE COMPRESSION HELPER
-   Comprime con Canvas — foto iPhone 4032×3024 px (5 MB) → ~250 KB.
-   iOS Safari respeta EXIF orientation automáticamente al cargar via
-   objectURL, por lo que el drawImage() siempre queda correctamente
-   orientado sin necesidad de leer el EXIF manualmente.
+   STEP PROGRESS BAR
    ═══════════════════════════════════════════════════════════════ */
-async function compressImage(
-  file: File,
-  maxPx = 1280,
-  quality = 0.80,
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const img = new window.Image();
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      let w = img.naturalWidth;
-      let h = img.naturalHeight;
-      if (w > maxPx || h > maxPx) {
-        if (w >= h) { h = Math.round((h * maxPx) / w); w = maxPx; }
-        else        { w = Math.round((w * maxPx) / h); h = maxPx; }
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width  = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) { reject(new Error("Canvas context unavailable")); return; }
-      ctx.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL("image/jpeg", quality));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("No se pudo cargar la imagen"));
-    };
-    img.src = objectUrl;
-  });
+function StepProgress({ step, labels }: { step: number; labels: string[] }) {
+  return (
+    <div className="mb-5">
+      <div className="flex items-center gap-2 mb-2.5">
+        {labels.map((label, i) => {
+          const s = i + 1;
+          const active = s === step;
+          const done = s < step;
+          return (
+            <div key={s} className="flex items-center gap-2 flex-1">
+              <div className="flex items-center gap-1.5 flex-1">
+                <div
+                  className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
+                  style={{
+                    background: done ? "#059669" : active ? "#AB1738" : "#E5E5EA",
+                    transition: "background 0.2s",
+                  }}
+                >
+                  {done ? (
+                    <Check className="w-3.5 h-3.5 text-white" strokeWidth={2.5} />
+                  ) : (
+                    <span style={{ fontSize: 11, fontWeight: 800, color: active ? "white" : "#AEAEB2" }}>{s}</span>
+                  )}
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: active ? 700 : 500,
+                    color: active ? "#AB1738" : done ? "#059669" : "#8E8E93",
+                    whiteSpace: "nowrap",
+                    transition: "color 0.2s",
+                  }}
+                >
+                  {label}
+                </span>
+              </div>
+              {i < labels.length - 1 && (
+                <div
+                  className="flex-1 h-0.5 rounded-full"
+                  style={{ background: done ? "#059669" : "#E5E5EA", minWidth: 12, transition: "background 0.2s" }}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
+const STEP_LABELS = ["Tipo", "Ubicación", "Descripción", "Enviar"];
+
 /* ═══════════════════════════════════════════════════════════════
-   REPORT FORM VIEW
+   REPORT FORM VIEW  — Wizard 4 pasos
    ═══════════════════════════════════════════════════════════════ */
 function ReportFormView() {
+  /* ── Wizard step ── */
+  const [step, setStep] = useState(1);
+  const navigate = useNavigate();
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const goNext = () => setStep((s) => Math.min(s + 1, 4));
+  const goBack = () => setStep((s) => Math.max(s - 1, 1));
+
   const [tipoEmergencia, setTipoEmergencia] = useState("");
   const [municipio, setMunicipio] = useState("");
   const [descripcion, setDescripcion] = useState("");
+  const [voiceNotes, setVoiceNotes] = useState<VoiceNote[]>([]);
   const [prioridad, setPrioridad] = useState<
     "alta" | "media" | "baja"
   >("media");
-  const [reportadoPor, setReportadoPor] = useState("");
-  const [imageDataUrls, setImageDataUrls] = useState<string[]>([]);
-  const [audioNotes, setAudioNotes] = useState<AudioValue[]>([]);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
+  const MAX_MEDIA = 5;
+
+  /* ── Address form visibility ── */
+  const [showAddressForm, setShowAddressForm] = useState(false);
 
   /* Address fields */
   const [codigoPostal, setCodigoPostal] = useState("");
@@ -759,6 +760,8 @@ function ReportFormView() {
     null,
   );
   const [showColoniaDD, setShowColoniaDD] = useState(false);
+  const [showTipoDD, setShowTipoDD] = useState(false);
+  const [showMunicipioDD, setShowMunicipioDD] = useState(false);
 
   /* Geolocation state */
   const [lat, setLat] = useState<number | null>(null);
@@ -1117,6 +1120,19 @@ function ReportFormView() {
     );
   }, [lookupCP]);
 
+  /* ── Auto-scroll to top on every step change ── */
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [step]);
+
+  /* ── Auto-request GPS on step 2 ── */
+  useEffect(() => {
+    if (step === 2 && gpsSource === null && !gpsLoading) {
+      requestGPS();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
   /* ─── Map picker confirm ─── */
   const handleMapPinConfirm = useCallback(
     async (
@@ -1178,186 +1194,128 @@ function ReportFormView() {
   const pickerInitialLng =
     lng ?? MUNICIPIO_COORDS[municipio]?.lng ?? -99.1411;
 
-  /* Image handling — compresión Canvas antes de guardar en estado */
-  const [compressingImage, setCompressingImage] = useState(false);
-
-  const handleImageSelect = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files || []);
-      e.target.value = "";
+  /* Multi-media handling */
+  const handleMediaSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
       if (files.length === 0) return;
+      e.target.value = "";
 
-      const availableSlots = Math.max(0, MAX_REPORT_IMAGES - imageDataUrls.length);
-      if (availableSlots <= 0) {
-        alert(`Puedes adjuntar hasta ${MAX_REPORT_IMAGES} fotografías por reporte.`);
-        return;
-      }
+      setMediaItems((prev) => {
+        const remaining = MAX_MEDIA - prev.length;
+        if (remaining <= 0) return prev;
+        const toProcess = files.slice(0, remaining);
+        const newItems: MediaItem[] = [];
 
-      const selected = files.slice(0, availableSlots);
-      if (files.length > availableSlots) {
-        alert(`Solo se agregarán ${availableSlots} fotografías (máximo ${MAX_REPORT_IMAGES}).`);
-      }
+        toProcess.forEach((file) => {
+          const isVideo = file.type.startsWith("video/");
+          if (isVideo) {
+            // Videos: use blob URL (local display only)
+            const url = URL.createObjectURL(file);
+            newItems.push({ type: "video", dataUrl: url });
+          } else {
+            // Images: base64
+            if (file.size > 8 * 1024 * 1024) return; // skip >8MB images
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const result = ev.target?.result as string;
+              if (result) {
+                setMediaItems((cur) => {
+                  if (cur.length >= MAX_MEDIA) return cur;
+                  return [...cur, { type: "image", dataUrl: result }];
+                });
+              }
+            };
+            reader.readAsDataURL(file);
+          }
+        });
 
-      setCompressingImage(true);
-      try {
-        const compressedImages: string[] = [];
-        for (const file of selected) {
-          const compressed = await compressImage(file);
-          compressedImages.push(compressed);
-        }
-        setImageDataUrls((prev) => [...prev, ...compressedImages].slice(0, MAX_REPORT_IMAGES));
-      } catch (err) {
-        console.error("[Dashboard911] compressImage failed:", err);
-        alert("No se pudo procesar una o más imágenes. Intenta nuevamente.");
-      } finally {
-        setCompressingImage(false);
-      }
+        // Video items added synchronously
+        if (newItems.length === 0) return prev;
+        return [...prev, ...newItems].slice(0, MAX_MEDIA);
+      });
     },
-    [imageDataUrls.length],
+    [],
   );
 
-  const removeImageAt = useCallback((index: number) => {
-    setImageDataUrls((prev) => prev.filter((_, i) => i !== index));
+  const removeMedia = useCallback((idx: number) => {
+    setMediaItems((prev) => {
+      const item = prev[idx];
+      // Revoke blob URL for videos to free memory
+      if (item?.type === "video" && item.dataUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(item.dataUrl);
+      }
+      return prev.filter((_, i) => i !== idx);
+    });
   }, []);
 
   /* Submit */
   const handleSubmit = useCallback(async () => {
     setSending(true);
-    setSent(false);
 
-    try {
-      // Small delay for UI feedback
-      await new Promise((r) => setTimeout(r, 400));
+    // Small delay for UI feedback
+    await new Promise((r) => setTimeout(r, 600));
 
-      const composedAddr = composeAddress({
-        calle,
-        numExterior,
-        numInterior,
-        colonia,
-        codigoPostal,
-        referencias,
-      });
-      const finalDescription = buildFinalDescription(descripcion, audioNotes);
-      if (!finalDescription.trim()) {
-        alert("Agrega texto manual o al menos una nota de voz antes de enviar el reporte.");
-        return;
-      }
+    const composedAddr = composeAddress({
+      calle,
+      numExterior,
+      numInterior,
+      colonia,
+      codigoPostal,
+      referencias,
+    });
 
-      /* ── Convert audio notes to base64 (for upload pipeline) ── */
-      const serializedAudioNotes = await Promise.all(
-        audioNotes.map(async (note) => {
-          try {
-            const src = await blobToDataUrl(note.blob);
-            return {
-              id: note.id,
-              src,
-              mimeType: note.mimeType,
-              transcript: note.transcript,
-              durationSec: note.durationSec,
-              transcriptionStatus:
-                note.transcriptionStatus ||
-                (note.transcript.trim().length > 0 ? "done" : "pending"),
-              transcriptionError: note.transcriptionError ?? null,
-              transcribedAt: note.transcribedAt ?? null,
-            };
-          } catch {
-            console.warn("[Dashboard911] Could not convert one audio note to base64");
-            return {
-              id: note.id,
-              src: "",
-              mimeType: note.mimeType,
-              transcript: note.transcript,
-              durationSec: note.durationSec,
-              transcriptionStatus: "error",
-              transcriptionError: "audio-conversion-failed",
-              transcribedAt: null,
-            };
-          }
-        }),
+    // ── Jerarquía de descripción: escrito → transcripciones de voz ──
+    const finalDescripcion =
+      buildActivityMessage(descripcion, voiceNotes, "") ||
+      "Sin descripción registrada.";
+
+    const report = createReport({
+      tipoEmergencia,
+      ubicacion:
+        composedAddr || "Ubicación pendiente de registro",
+      municipio,
+      descripcion: finalDescripcion,
+      prioridad,
+      mediaItems,
+      lat:
+        gpsSource === "gps" ||
+        gpsSource === "search" ||
+        gpsSource === "pin"
+          ? lat
+          : null,
+      lng:
+        gpsSource === "gps" ||
+        gpsSource === "search" ||
+        gpsSource === "pin"
+          ? lng
+          : null,
+    });
+
+    // Save to server + push notification to all devices
+    const result = await saveReport(report);
+    if (result.push && result.push.sent > 0) {
+      console.log(
+        `[Dashboard911] Report sent, push delivered to ${result.push.sent}/${result.push.total} devices`,
       );
-
-      const report = createReport({
-        tipoEmergencia,
-        ubicacion:
-          composedAddr || "Ubicación pendiente de registro",
-        municipio,
-        descripcion: finalDescription,
-        prioridad,
-        reportadoPor,
-        imageDataUrls,
-        audioNotes: serializedAudioNotes,
-        lat:
-          gpsSource === "gps" ||
-          gpsSource === "search" ||
-          gpsSource === "pin"
-            ? lat
-            : null,
-        lng:
-          gpsSource === "gps" ||
-          gpsSource === "search" ||
-          gpsSource === "pin"
-            ? lng
-            : null,
-      });
-
-      // Save to server + push notification to all devices
-      const result = await saveReport(report);
-      if (!result.success) {
-        console.warn("[Dashboard911] Report saved locally but server sync failed");
-        const failedImages = result.uploadFailures?.images || 0;
-        const failedAudio = result.uploadFailures?.audio || 0;
-        const mediaHint =
-          failedImages > 0 || failedAudio > 0
-            ? `\n\nFallos de evidencia: ${failedImages} foto(s), ${failedAudio} audio(s).`
-            : "";
-        alert(
-          `No se pudo sincronizar con Supabase en este momento. El reporte quedó guardado solo en este dispositivo.${mediaHint}\n\nError: ${result.error || "sin detalle del servidor"}`,
-        );
-        return;
-      }
-
-      if (result.push && result.push.sent > 0) {
-        console.log(
-          `[Dashboard911] Report sent, push delivered to ${result.push.sent}/${result.push.total} devices`,
-        );
-      }
-
-      if ((result.uploadFailures?.images || 0) > 0 || (result.uploadFailures?.audio || 0) > 0) {
-        alert(
-          `El reporte sí se sincronizó, pero hubo evidencia que no subió a Storage: ${result.uploadFailures?.images || 0} foto(s), ${result.uploadFailures?.audio || 0} audio(s).`,
-        );
-      }
-
-      // Reset form
-      setTipoEmergencia("");
-      setCodigoPostal("");
-      setColonia("");
-      setCalle("");
-      setNumExterior("");
-      setNumInterior("");
-      setReferencias("");
-      setCpColonias([]);
-      setCpMunicipio(null);
-      setCpError(null);
-      setMunicipio("");
-      setDescripcion("");
-      setPrioridad("media");
-      setReportadoPor("");
-      setImageDataUrls([]);
-      setAudioNotes([]);
-      setLat(null);
-      setLng(null);
-      setGpsSource(null);
-      setGpsError(null);
-      setSent(true);
-      setTimeout(() => setSent(false), 3000);
-    } catch (err) {
-      console.error("[Dashboard911] handleSubmit error:", err);
-      alert("Ocurrió un error al enviar el reporte. Intenta nuevamente.");
-    } finally {
-      // SIEMPRE libera el estado de envío, pase lo que pase
-      setSending(false);
+    } else if (!result.success) {
+      console.warn(
+        "[Dashboard911] Report saved locally but server sync failed",
+      );
     }
+
+    // Revoke any blob URLs before navigating away
+    setMediaItems((prev) => {
+      prev.forEach((item) => {
+        if (item.type === "video" && item.dataUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(item.dataUrl);
+        }
+      });
+      return [];
+    });
+
+    // Navigate back to Home911 after submit
+    navigate("/911");
   }, [
     tipoEmergencia,
     calle,
@@ -1368,50 +1326,25 @@ function ReportFormView() {
     referencias,
     municipio,
     descripcion,
+    voiceNotes,
     prioridad,
-    reportadoPor,
-    imageDataUrls,
-    audioNotes,
+    mediaItems,
     lat,
     lng,
     gpsSource,
+    navigate,
   ]);
 
-  /* Dropdown states */
-  const [showTipoDD, setShowTipoDD] = useState(false);
-  const [showMunicipioDD, setShowMunicipioDD] = useState(false);
-  const selectedTipo = TIPOS_EMERGENCIA.find(
-    (t) => t.value === tipoEmergencia,
-  );
-  const composedPreview = composeAddress({
-    calle,
-    numExterior,
-    numInterior,
-    colonia,
-    codigoPostal,
-    referencias,
-  });
-  const canGeocode =
-    calle.trim().length > 0 ||
-    colonia.trim().length > 0 ||
-    municipio.length > 0 ||
-    codigoPostal.length === 5;
+  /* ── Derived helpers ── */
+  const selectedTipo = TIPOS_EMERGENCIA.find((t) => t.value === tipoEmergencia);
+  const composedPreview = composeAddress({ calle, numExterior, numInterior, colonia, codigoPostal, referencias });
+  const canGeocode = calle.trim().length > 0 || colonia.trim().length > 0 || municipio.length > 0 || codigoPostal.length === 5;
 
   /* ─── Clear all location data ─── */
   const clearLocation = useCallback(() => {
-    setLat(null);
-    setLng(null);
-    setGpsSource(null);
-    setGpsError(null);
-    setCodigoPostal("");
-    setColonia("");
-    setCalle("");
-    setNumExterior("");
-    setNumInterior("");
-    setReferencias("");
-    setCpColonias([]);
-    setCpMunicipio(null);
-    setCpError(null);
+    setLat(null); setLng(null); setGpsSource(null); setGpsError(null);
+    setCodigoPostal(""); setColonia(""); setCalle(""); setNumExterior("");
+    setNumInterior(""); setReferencias(""); setCpColonias([]); setCpMunicipio(null); setCpError(null);
     setMunicipio("");
   }, []);
 
@@ -1420,8 +1353,33 @@ function ReportFormView() {
     setHistory(getSubmittedReports());
   }, []);
 
+  /* ─── Step canProceed guards ─── */
+  const canStep1 = tipoEmergencia !== "";
+  const canStep2 = municipio !== "";
+  const hasDesc = descripcion.trim().length > 0 || voiceNotes.length > 0;
+
+  /* ── Shared nav button style ── */
+  const btnBack: React.CSSProperties = {
+    width: 80, height: 64, borderRadius: 20, background: "#F2F2F7",
+    border: "1.5px solid #E5E5EA", fontSize: 15, fontWeight: 700, color: "#636366",
+    display: "flex", alignItems: "center", justifyContent: "center",
+  };
+  const btnNext = (enabled: boolean, color = "#AB1738"): React.CSSProperties => ({
+    flex: 1, height: 64, borderRadius: 20, fontSize: 18, fontWeight: 800,
+    letterSpacing: "-0.01em", color: enabled ? "white" : "#AEAEB2",
+    background: enabled ? `linear-gradient(135deg, ${color}, ${color}CC)` : "#E5E5EA",
+    boxShadow: enabled ? `0 6px 24px ${color}55` : "none",
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+  });
+
+  /* ── Card wrapper style ── */
+  const cardStyle: React.CSSProperties = {
+    background: "#FFFFFF", borderRadius: 24, padding: 20,
+    border: "1px solid #E5E5EA", boxShadow: "0 1px 3px rgba(0,0,0,0.06),0 4px 24px rgba(0,0,0,0.06)",
+  };
+
   return (
-    <PullToRefresh onRefresh={handleRefresh} className="flex-1 min-h-0">
+    <PullToRefresh onRefresh={handleRefresh} className="flex-1 pb-28" scrollRef={scrollRef}>
       {/* ═══ Map Picker Modal ═══ */}
       {showMapPicker && (
         <MapPickerModal
@@ -1432,1225 +1390,621 @@ function ReportFormView() {
         />
       )}
 
-      {/* ═══ Form Card ═══ */}
+      {/* File inputs */}
+      <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleMediaSelect} />
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleMediaSelect} />
+      <input ref={videoRef} type="file" accept="video/*" capture="environment" className="hidden" onChange={handleMediaSelect} />
+
+      {/* ═══ WIZARD ═══ */}
       <div className="mx-4 mt-2 mb-4">
-        <div
-          className="rounded-2xl p-4 space-y-4"
-          style={{
-            background: "#FFFFFF",
-            border: "1px solid #E5E5EA",
-            boxShadow:
-              "0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)",
-          }}
-        >
-          {/* Title */}
-          <div className="flex items-center gap-2 mb-1">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ background: "rgba(220,38,38,0.08)" }}
+
+        {/* Step progress */}
+        <StepProgress step={step} labels={STEP_LABELS} />
+
+        <AnimatePresence mode="wait">
+
+          {/* ══════════════════════════════════════════════════════
+              PASO 1 — TIPO DE EMERGENCIA
+              ══════════════════════════════════════════════════════ */}
+          {step === 1 && (
+            <motion.div key="step1"
+              initial={{ opacity: 0, x: 32 }} animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -32 }} transition={{ duration: 0.2, ease: "easeInOut" }}
             >
-              <AlertTriangle
-                className="w-4 h-4 text-[#DC2626]"
-                strokeWidth={2}
-              />
-            </div>
-            <h2
-              className="text-[18px] text-[#1C1C1E]"
-              style={{ fontWeight: 700 }}
-            >
-              Nuevo Reporte 911
-            </h2>
-          </div>
-
-          {/* Tipo de Emergencia */}
-          <div>
-            <label
-              className="text-[13px] text-[#636366] mb-1.5 block"
-              style={{ fontWeight: 600 }}
-            >
-              Tipo de Emergencia
-            </label>
-            <button
-              onClick={() => {
-                setShowTipoDD(!showTipoDD);
-                setShowMunicipioDD(false);
-                setShowColoniaDD(false);
-              }}
-              className="w-full flex items-center justify-between px-3 py-3 rounded-xl text-left"
-              style={{
-                background: "#F2F2F7",
-                border: "1px solid #E5E5EA",
-              }}
-            >
-              {selectedTipo ? (
-                <span className="flex items-center gap-2 text-[15px] text-[#1C1C1E]">
-                  <selectedTipo.icon
-                    className="w-4 h-4"
-                    style={{ color: selectedTipo.color }}
-                    strokeWidth={2}
-                  />
-                  {selectedTipo.value}
-                </span>
-              ) : (
-                <span className="text-[15px] text-[#C7C7CC]">
-                  Seleccionar tipo...
-                </span>
-              )}
-              <ChevronDown
-                className="w-4 h-4 text-[#8E8E93]"
-                strokeWidth={2}
-              />
-            </button>
-            {showTipoDD && (
-              <div
-                className="mt-1 rounded-xl overflow-hidden border border-[#E5E5EA]"
-                style={{
-                  background: "#FFFFFF",
-                  boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
-                }}
-              >
-                {TIPOS_EMERGENCIA.map((tipo) => (
-                  <button
-                    key={tipo.value}
-                    onClick={() => {
-                      setTipoEmergencia(tipo.value);
-                      setShowTipoDD(false);
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left active:bg-[#F2F2F7] transition-colors"
-                    style={{
-                      borderBottom: "0.5px solid #F2F2F7",
-                    }}
-                  >
-                    <tipo.icon
-                      className="w-4 h-4 shrink-0"
-                      style={{ color: tipo.color }}
-                      strokeWidth={2}
-                    />
-                    <span className="text-[15px] text-[#1C1C1E]">
-                      {tipo.value}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* ═══════════════════════════════════════
-              UBICACIÓN
-              ═══════════════════════════════════════ */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label
-                className="text-[13px] text-[#636366]"
-                style={{ fontWeight: 600 }}
-              >
-                Ubicación del Incidente
-              </label>
-              {gpsSource === "gps" && (
-                <span
-                  className="text-[11px] text-white bg-[#059669] px-2 py-0.5 rounded-full flex items-center gap-1"
-                  style={{ fontWeight: 600 }}
-                >
-                  <Navigation
-                    className="w-3 h-3"
-                    strokeWidth={2}
-                  />{" "}
-                  GPS
-                </span>
-              )}
-              {gpsSource === "search" && (
-                <span
-                  className="text-[11px] text-white bg-[#3B82F6] px-2 py-0.5 rounded-full flex items-center gap-1"
-                  style={{ fontWeight: 600 }}
-                >
-                  <CheckCircle2
-                    className="w-3 h-3"
-                    strokeWidth={2}
-                  />{" "}
-                  Localizada
-                </span>
-              )}
-              {gpsSource === "pin" && (
-                <span
-                  className="text-[11px] text-white bg-[#8B5CF6] px-2 py-0.5 rounded-full flex items-center gap-1"
-                  style={{ fontWeight: 600 }}
-                >
-                  <Eye className="w-3 h-3" strokeWidth={2} />{" "}
-                  Pin manual
-                </span>
-              )}
-            </div>
-
-            {/* Action buttons row */}
-            <div className="flex gap-2 mb-3">
-              {/* GPS Button */}
-              <button
-                onClick={requestGPS}
-                disabled={gpsLoading}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl active:scale-[0.97] transition-all disabled:opacity-60"
-                style={{
-                  background:
-                    gpsSource === "gps"
-                      ? "rgba(5,150,105,0.08)"
-                      : "rgba(171,23,56,0.04)",
-                  border:
-                    gpsSource === "gps"
-                      ? "1.5px solid rgba(5,150,105,0.3)"
-                      : "1.5px solid rgba(171,23,56,0.12)",
-                }}
-              >
-                {gpsLoading ? (
-                  <Loader2
-                    className="w-4 h-4 text-[#AB1738] animate-spin"
-                    strokeWidth={2}
-                  />
-                ) : gpsSource === "gps" ? (
-                  <CheckCircle2
-                    className="w-4 h-4 text-[#059669]"
-                    strokeWidth={2}
-                  />
-                ) : (
-                  <Crosshair
-                    className="w-4 h-4 text-[#AB1738]"
-                    strokeWidth={2}
-                  />
-                )}
-                <span
-                  className="text-[13px]"
-                  style={{
-                    fontWeight: 600,
-                    color:
-                      gpsSource === "gps"
-                        ? "#059669"
-                        : "#AB1738",
-                  }}
-                >
-                  {gpsLoading
-                    ? "Obteniendo..."
-                    : gpsSource === "gps"
-                      ? "GPS listo"
-                      : "Usar GPS"}
-                </span>
-              </button>
-
-              {/* Map Pin Button */}
-              <button
-                onClick={openMapPicker}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl active:scale-[0.97] transition-all"
-                style={{
-                  background:
-                    gpsSource === "pin"
-                      ? "rgba(59,130,246,0.08)"
-                      : "rgba(59,130,246,0.04)",
-                  border:
-                    gpsSource === "pin"
-                      ? "1.5px solid rgba(59,130,246,0.3)"
-                      : "1.5px solid rgba(59,130,246,0.12)",
-                }}
-              >
-                {gpsSource === "pin" ? (
-                  <CheckCircle2
-                    className="w-4 h-4 text-[#3B82F6]"
-                    strokeWidth={2}
-                  />
-                ) : (
-                  <MapPin
-                    className="w-4 h-4 text-[#3B82F6]"
-                    strokeWidth={2}
-                  />
-                )}
-                <span
-                  className="text-[13px] text-[#3B82F6]"
-                  style={{ fontWeight: 600 }}
-                >
-                  {gpsSource === "pin"
-                    ? "Pin colocado"
-                    : "Poner pin en mapa"}
-                </span>
-              </button>
-            </div>
-
-            {/* GPS/search/pin coords badge */}
-            {(gpsSource === "gps" ||
-              gpsSource === "search" ||
-              gpsSource === "pin") &&
-              lat != null &&
-              lng != null && (
-                <div
-                  className="flex items-center gap-2 mb-3 px-2.5 py-2 rounded-lg"
-                  style={{
-                    background: "rgba(5,150,105,0.04)",
-                    border: "1px solid rgba(5,150,105,0.12)",
-                  }}
-                >
-                  <Navigation
-                    className="w-3 h-3 text-[#059669] shrink-0"
-                    strokeWidth={2}
-                  />
-                  <span
-                    className="text-[12px] text-[#059669] tabular-nums"
-                    style={{ fontWeight: 500 }}
-                  >
-                    {lat.toFixed(6)}°N,{" "}
-                    {Math.abs(lng).toFixed(6)}°W
-                  </span>
-                  <button
-                    onClick={clearLocation}
-                    className="ml-auto text-[11px] text-[#DC2626] px-2 py-0.5 rounded-md active:opacity-60"
-                    style={{
-                      background: "rgba(220,38,38,0.06)",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Limpiar
-                  </button>
-                </div>
-              )}
-
-            {/* GPS Error */}
-            {gpsError && (
-              <div
-                className="flex items-center gap-1.5 mb-2 px-2 py-1.5 rounded-lg"
-                style={{ background: "rgba(220,38,38,0.04)" }}
-              >
-                <AlertTriangle
-                  className="w-3.5 h-3.5 text-[#F59E0B] shrink-0"
-                  strokeWidth={2}
-                />
-                <span className="text-[12px] text-[#8B6914]">
-                  {gpsError}
-                </span>
-              </div>
-            )}
-
-            {/* Divider */}
-            <div className="flex items-center gap-2 mb-3">
-              <div className="flex-1 h-px bg-[#E5E5EA]" />
-              <span
-                className="text-[11px] text-[#8E8E93] uppercase tracking-wider"
-                style={{ fontWeight: 600 }}
-              >
-                Dirección
-              </span>
-              <div className="flex-1 h-px bg-[#E5E5EA]" />
-            </div>
-
-            {/* ─── Structured Address Card ─── */}
-            <div
-              className="rounded-xl p-3 space-y-3"
-              style={{
-                background: "#F9F9FB",
-                border: "1px solid #E5E5EA",
-              }}
-            >
-              {/* STEP 1: Código Postal */}
-              <div>
-                <label
-                  className="text-[12px] text-[#636366] mb-1 flex items-center gap-1"
-                  style={{ fontWeight: 700 }}
-                >
-                  <span
-                    className="w-4 h-4 rounded-full bg-[#AB1738] text-white text-[10px] flex items-center justify-center"
-                    style={{ fontWeight: 700 }}
-                  >
-                    1
-                  </span>
-                  Código Postal
-                </label>
-                <div className="relative">
-                  <Hash
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C7C7CC]"
-                    strokeWidth={1.8}
-                  />
-                  <input
-                    value={codigoPostal}
-                    onChange={(e) =>
-                      handleCPChange(e.target.value)
-                    }
-                    placeholder="Ej: 87000"
-                    inputMode="numeric"
-                    maxLength={5}
-                    className="w-full pl-9 pr-10 py-3 rounded-xl text-[16px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none tracking-wider focus:ring-2 focus:ring-[#AB1738]/20"
-                    style={{
-                      background: "#FFFFFF",
-                      border:
-                        cpColonias.length > 0
-                          ? "1.5px solid rgba(5,150,105,0.3)"
-                          : "1px solid #D1D1D6",
-                      fontWeight: 600,
-                    }}
-                  />
-                  {cpLoading && (
-                    <Loader2
-                      className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#AB1738] animate-spin"
-                      strokeWidth={2}
-                    />
-                  )}
-                  {cpColonias.length > 0 && !cpLoading && (
-                    <CheckCircle2
-                      className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#059669]"
-                      strokeWidth={2}
-                    />
-                  )}
-                </div>
-                {cpError && (
-                  <p className="text-[12px] text-[#DC2626] mt-1 px-1 flex items-center gap-1">
-                    <AlertTriangle
-                      className="w-3 h-3 shrink-0"
-                      strokeWidth={2}
-                    />
-                    {cpError}
-                  </p>
-                )}
-                {cpColonias.length > 0 && (
-                  <p
-                    className="text-[11px] text-[#059669] mt-1 px-1"
-                    style={{ fontWeight: 500 }}
-                  >
-                    {cpColonias.length} colonia
-                    {cpColonias.length > 1 ? "s" : ""}{" "}
-                    encontrada{cpColonias.length > 1 ? "s" : ""}
-                    {cpMunicipio &&
-                      ` — ${cpMunicipio}, Tamaulipas`}
-                  </p>
-                )}
-              </div>
-
-              {/* STEP 2: Colonia */}
-              <div>
-                <label
-                  className="text-[12px] text-[#636366] mb-1 flex items-center gap-1"
-                  style={{ fontWeight: 700 }}
-                >
-                  <span
-                    className="w-4 h-4 rounded-full bg-[#AB1738] text-white text-[10px] flex items-center justify-center"
-                    style={{ fontWeight: 700 }}
-                  >
-                    2
-                  </span>
-                  Colonia
-                </label>
-                {cpColonias.length > 1 ? (
+              <div style={cardStyle}>
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-5">
+                  <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(220,38,38,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <AlertTriangle style={{ width: 24, height: 24, color: "#DC2626" }} strokeWidth={2} />
+                  </div>
                   <div>
-                    <button
-                      onClick={() => {
-                        setShowColoniaDD(!showColoniaDD);
-                        setShowTipoDD(false);
-                        setShowMunicipioDD(false);
-                      }}
-                      className="w-full flex items-center justify-between px-3 py-3 rounded-xl text-left"
-                      style={{
-                        background: "#FFFFFF",
-                        border: colonia
-                          ? "1.5px solid rgba(5,150,105,0.3)"
-                          : "1px solid #D1D1D6",
-                      }}
-                    >
-                      <span className="flex items-center gap-2">
-                        <MapPinned
-                          className="w-4 h-4 text-[#8E8E93]"
-                          strokeWidth={1.8}
-                        />
-                        <span
-                          className={`text-[15px] ${colonia ? "text-[#1C1C1E]" : "text-[#C7C7CC]"}`}
-                          style={{
-                            fontWeight: colonia ? 500 : 400,
-                          }}
-                        >
-                          {colonia || "Selecciona colonia..."}
-                        </span>
-                      </span>
-                      {showColoniaDD ? (
-                        <ChevronUp
-                          className="w-4 h-4 text-[#8E8E93]"
-                          strokeWidth={2}
-                        />
-                      ) : (
-                        <ChevronDown
-                          className="w-4 h-4 text-[#8E8E93]"
-                          strokeWidth={2}
-                        />
-                      )}
-                    </button>
-                    {showColoniaDD && (
-                      <div
-                        className="mt-1 rounded-xl overflow-hidden border border-[#D1D1D6] max-h-48 overflow-y-auto"
+                    <p style={{ fontSize: 13, color: "#8E8E93", fontWeight: 500 }}>¿Qué está pasando?</p>
+                    <h2 style={{ fontSize: 22, fontWeight: 800, color: "#1C1C1E", letterSpacing: "-0.02em", lineHeight: 1.1 }}>Tipo de Emergencia</h2>
+                  </div>
+                </div>
+
+                {/* Grid de tipos — tarjetas grandes */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  {TIPOS_EMERGENCIA.map((tipo) => {
+                    const sel = tipoEmergencia === tipo.value;
+                    return (
+                      <button
+                        key={tipo.value}
+                        onClick={() => setTipoEmergencia(sel ? "" : tipo.value)}
+                        className="active:scale-[0.96] transition-transform"
                         style={{
-                          background: "#FFFFFF",
-                          boxShadow:
-                            "0 4px 20px rgba(0,0,0,0.12)",
+                          minHeight: 88, borderRadius: 18, padding: "14px 10px",
+                          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
+                          background: sel ? `${tipo.color}18` : "#F2F2F7",
+                          border: `2px solid ${sel ? tipo.color : "transparent"}`,
+                          boxShadow: sel ? `0 4px 16px ${tipo.color}30` : "none",
+                          transition: "all 0.15s",
                         }}
                       >
-                        {cpColonias.map((c) => (
-                          <button
-                            key={c}
-                            onClick={() => {
-                              setColonia(c);
-                              setShowColoniaDD(false);
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-2.5 text-left active:bg-[#F2F2F7] transition-colors"
-                            style={{
-                              borderBottom:
-                                "0.5px solid #F2F2F7",
-                              background:
-                                colonia === c
-                                  ? "rgba(171,23,56,0.04)"
-                                  : "transparent",
-                            }}
-                          >
-                            {colonia === c && (
-                              <CheckCircle2
-                                className="w-3.5 h-3.5 text-[#AB1738] shrink-0"
-                                strokeWidth={2}
-                              />
-                            )}
-                            <span
-                              className={`text-[15px] ${colonia === c ? "text-[#AB1738]" : "text-[#1C1C1E]"}`}
-                              style={{
-                                fontWeight:
-                                  colonia === c ? 600 : 400,
-                              }}
+                        <tipo.icon style={{ width: 30, height: 30, color: sel ? tipo.color : "#636366" }} strokeWidth={sel ? 2.5 : 1.8} />
+                        <span style={{ fontSize: 13, fontWeight: sel ? 800 : 500, color: sel ? tipo.color : "#3A3A3C", lineHeight: 1.25, textAlign: "center" }}>
+                          {tipo.value}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* CTA */}
+              <button
+                onClick={goNext} disabled={!canStep1}
+                className="w-full mt-3 active:scale-[0.97] transition-transform"
+                style={btnNext(canStep1)}
+              >
+                {selectedTipo && <selectedTipo.icon style={{ width: 22, height: 22, color: canStep1 ? "white" : "#AEAEB2" }} strokeWidth={2.5} />}
+                <span>{canStep1 ? selectedTipo!.value : "Selecciona el tipo"}</span>
+                {canStep1 && <ChevronRight style={{ width: 20, height: 20 }} strokeWidth={2.5} />}
+              </button>
+            </motion.div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════
+              PASO 2 — UBICACIÓN
+              ══════════════════════════════════════════════════════ */}
+          {step === 2 && (
+            <motion.div key="step2"
+              initial={{ opacity: 0, x: 32 }} animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -32 }} transition={{ duration: 0.2, ease: "easeInOut" }}
+            >
+              <div style={cardStyle}>
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-5">
+                  <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(171,23,56,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <MapPin style={{ width: 24, height: 24, color: "#AB1738" }} strokeWidth={2} />
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 13, color: "#8E8E93", fontWeight: 500 }}>¿Dónde ocurrió?</p>
+                    <h2 style={{ fontSize: 22, fontWeight: 800, color: "#1C1C1E", letterSpacing: "-0.02em", lineHeight: 1.1 }}>Ubicación</h2>
+                  </div>
+                </div>
+
+                {/* ── GPS BUTTON (primario, enorme) ── */}
+                <button
+                  onClick={requestGPS} disabled={gpsLoading}
+                  className="w-full flex items-center gap-4 rounded-2xl active:scale-[0.98] transition-transform mb-3 disabled:opacity-70"
+                  style={{
+                    minHeight: 88, padding: "0 20px",
+                    background: gpsSource === "gps"
+                      ? "linear-gradient(135deg,#059669,#047857)"
+                      : "linear-gradient(135deg,#AB1738,#7C1028)",
+                    boxShadow: gpsSource === "gps"
+                      ? "0 6px 24px rgba(5,150,105,0.30)"
+                      : "0 6px 24px rgba(171,23,56,0.30)",
+                  }}
+                >
+                  <div style={{ width: 52, height: 52, borderRadius: 16, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {gpsLoading
+                      ? <Loader2 style={{ width: 28, height: 28, color: "white" }} strokeWidth={2} className="animate-spin" />
+                      : gpsSource === "gps"
+                        ? <CheckCircle2 style={{ width: 28, height: 28, color: "white" }} strokeWidth={2.5} />
+                        : <Crosshair style={{ width: 28, height: 28, color: "white" }} strokeWidth={2} />
+                    }
+                  </div>
+                  <div className="text-left flex-1">
+                    <p style={{ fontSize: 20, fontWeight: 800, color: "white", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+                      {gpsLoading ? "Obteniendo GPS..." : gpsSource === "gps" ? "Ubicación GPS obtenida" : "Usar mi ubicación GPS"}
+                    </p>
+                    <p style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.75)" }}>
+                      {gpsSource === "gps" ? `${lat?.toFixed(5)}°N, ${Math.abs(lng ?? 0).toFixed(5)}°W` : "Más rápido y exacto"}
+                    </p>
+                  </div>
+                </button>
+
+                {/* Mini map preview si GPS obtenido */}
+                {hasPreview && (gpsSource === "gps" || gpsSource === "pin" || gpsSource === "search") && (
+                  <div className="mb-3">
+                    <MiniMapPreview
+                      lat={lat!} lng={lng!} onTap={openMapPicker}
+                      label={gpsSource === "gps" ? "Ubicación GPS actual" : gpsSource === "pin" ? "Pin colocado en mapa" : composedPreview || "Dirección localizada"}
+                    />
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={openMapPicker}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl active:scale-[0.97] transition-transform"
+                        style={{ background: "rgba(139,92,246,0.06)", border: "1.5px solid rgba(139,92,246,0.2)", color: "#7C3AED", fontSize: 14, fontWeight: 700 }}
+                      >
+                        <LocateFixed style={{ width: 16, height: 16 }} strokeWidth={2} />
+                        Ajustar pin
+                      </button>
+                      <button
+                        onClick={clearLocation}
+                        className="flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl active:scale-[0.97] transition-transform"
+                        style={{ background: "rgba(220,38,38,0.06)", border: "1.5px solid rgba(220,38,38,0.15)", color: "#DC2626", fontSize: 14, fontWeight: 700 }}
+                      >
+                        <X style={{ width: 16, height: 16 }} strokeWidth={2} />
+                        Limpiar
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pin en mapa */}
+                {!hasPreview && (
+                  <button
+                    onClick={openMapPicker}
+                    className="w-full flex items-center gap-3 rounded-2xl active:scale-[0.98] transition-transform mb-3"
+                    style={{ minHeight: 64, padding: "0 16px", background: "#F2F2F7", border: "2px dashed #C7C7CC" }}
+                  >
+                    <MapPin style={{ width: 22, height: 22, color: "#3B82F6" }} strokeWidth={2} />
+                    <span style={{ fontSize: 16, fontWeight: 700, color: "#3B82F6" }}>Colocar pin en el mapa</span>
+                  </button>
+                )}
+
+                {/* GPS error */}
+                {gpsError && (
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl mb-3" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                    <AlertTriangle style={{ width: 16, height: 16, color: "#F59E0B", flexShrink: 0, marginTop: 2 }} strokeWidth={2} />
+                    <p style={{ fontSize: 14, color: "#92400E", lineHeight: 1.4 }}>{gpsError}</p>
+                  </div>
+                )}
+
+                {/* ── Dirección manual (colapsable) ── */}
+                <button
+                  onClick={() => setShowAddressForm(!showAddressForm)}
+                  className="w-full flex items-center justify-between px-4 py-3.5 rounded-xl active:bg-[#E5E5EA] transition-colors"
+                  style={{ background: "#F2F2F7", border: "1.5px solid #E5E5EA" }}
+                >
+                  <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 700, color: "#48484A" }}>
+                    <MapPinned style={{ width: 18, height: 18, color: "#636366" }} strokeWidth={2} />
+                    Ingresar dirección manualmente
+                  </span>
+                  {showAddressForm
+                    ? <ChevronUp style={{ width: 18, height: 18, color: "#8E8E93" }} strokeWidth={2} />
+                    : <ChevronDown style={{ width: 18, height: 18, color: "#8E8E93" }} strokeWidth={2} />
+                  }
+                </button>
+
+                {showAddressForm && (
+                  <div className="mt-3 rounded-xl p-4 space-y-4" style={{ background: "#F9F9FB", border: "1px solid #E5E5EA" }}>
+                    {/* Municipio (requerido) */}
+                    <div>
+                      <label style={{ fontSize: 13, fontWeight: 700, color: "#636366", display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                        <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#AB1738", color: "white", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>1</span>
+                        Municipio <span style={{ fontSize: 11, color: "#DC2626", fontWeight: 700 }}>Requerido</span>
+                        {cpMunicipio && <span style={{ fontSize: 11, color: "#059669", background: "rgba(5,150,105,0.1)", borderRadius: 6, padding: "1px 6px", fontWeight: 700 }}>Auto</span>}
+                      </label>
+                      <button
+                        onClick={() => { setShowMunicipioDD(!showMunicipioDD); setShowTipoDD(false); setShowColoniaDD(false); }}
+                        className="w-full flex items-center justify-between px-4 py-4 rounded-xl text-left"
+                        style={{ background: "#FFFFFF", border: municipio ? "1.5px solid rgba(5,150,105,0.4)" : "1.5px solid #D1D1D6", minHeight: 56 }}
+                      >
+                        <span style={{ fontSize: 16, fontWeight: municipio ? 600 : 400, color: municipio ? "#1C1C1E" : "#C7C7CC" }}>
+                          {municipio || "Seleccionar municipio..."}
+                        </span>
+                        {municipio ? <CheckCircle2 style={{ width: 18, height: 18, color: "#059669" }} strokeWidth={2} /> : <ChevronDown style={{ width: 18, height: 18, color: "#8E8E93" }} strokeWidth={2} />}
+                      </button>
+                      {showMunicipioDD && (
+                        <div className="mt-1.5 rounded-xl overflow-hidden border border-[#D1D1D6] max-h-52 overflow-y-auto" style={{ background: "#FFFFFF", boxShadow: "0 4px 20px rgba(0,0,0,0.12)" }}>
+                          {MUNICIPIOS.map((m) => (
+                            <button key={m} onClick={() => { setMunicipio(m); setShowMunicipioDD(false); }}
+                              className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-[#F2F2F7] transition-colors"
+                              style={{ borderBottom: "0.5px solid #F2F2F7", background: municipio === m ? "rgba(171,23,56,0.04)" : "transparent" }}
                             >
-                              {c}
-                            </span>
+                              {municipio === m && <CheckCircle2 style={{ width: 16, height: 16, color: "#AB1738", flexShrink: 0 }} strokeWidth={2} />}
+                              <span style={{ fontSize: 16, fontWeight: municipio === m ? 700 : 400, color: municipio === m ? "#AB1738" : "#1C1C1E" }}>{m}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Código Postal */}
+                    <div>
+                      <label style={{ fontSize: 13, fontWeight: 700, color: "#636366", display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                        <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#AB1738", color: "white", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>2</span>
+                        Código Postal
+                      </label>
+                      <div className="relative">
+                        <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C7C7CC]" strokeWidth={1.8} />
+                        <input
+                          value={codigoPostal} onChange={(e) => handleCPChange(e.target.value)}
+                          placeholder="87000" inputMode="numeric" maxLength={5}
+                          className="w-full pl-10 pr-10 py-4 rounded-xl text-[16px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none tracking-wider"
+                          style={{ background: "#FFFFFF", border: cpColonias.length > 0 ? "1.5px solid rgba(5,150,105,0.4)" : "1.5px solid #D1D1D6", fontWeight: 600 }}
+                        />
+                        {cpLoading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#AB1738] animate-spin" strokeWidth={2} />}
+                        {cpColonias.length > 0 && !cpLoading && <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#059669]" strokeWidth={2} />}
+                      </div>
+                      {cpError && <p className="text-[13px] text-[#DC2626] mt-1.5 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />{cpError}</p>}
+                    </div>
+
+                    {/* Colonia */}
+                    <div>
+                      <label style={{ fontSize: 13, fontWeight: 700, color: "#636366", display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                        <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#AB1738", color: "white", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>3</span>
+                        Colonia
+                      </label>
+                      {cpColonias.length > 1 ? (
+                        <>
+                          <button
+                            onClick={() => { setShowColoniaDD(!showColoniaDD); setShowMunicipioDD(false); }}
+                            className="w-full flex items-center justify-between px-4 py-4 rounded-xl text-left"
+                            style={{ background: "#FFFFFF", border: colonia ? "1.5px solid rgba(5,150,105,0.4)" : "1.5px solid #D1D1D6", minHeight: 56 }}
+                          >
+                            <span style={{ fontSize: 16, fontWeight: colonia ? 600 : 400, color: colonia ? "#1C1C1E" : "#C7C7CC" }}>{colonia || "Selecciona colonia..."}</span>
+                            {showColoniaDD ? <ChevronUp className="w-4 h-4 text-[#8E8E93]" strokeWidth={2} /> : <ChevronDown className="w-4 h-4 text-[#8E8E93]" strokeWidth={2} />}
                           </button>
-                        ))}
+                          {showColoniaDD && (
+                            <div className="mt-1.5 rounded-xl overflow-hidden border border-[#D1D1D6] max-h-48 overflow-y-auto" style={{ background: "#FFFFFF", boxShadow: "0 4px 20px rgba(0,0,0,0.12)" }}>
+                              {cpColonias.map((c) => (
+                                <button key={c} onClick={() => { setColonia(c); setShowColoniaDD(false); }}
+                                  className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-[#F2F2F7] transition-colors"
+                                  style={{ borderBottom: "0.5px solid #F2F2F7" }}
+                                >
+                                  {colonia === c && <CheckCircle2 className="w-3.5 h-3.5 text-[#AB1738] shrink-0" strokeWidth={2} />}
+                                  <span style={{ fontSize: 15, fontWeight: colonia === c ? 700 : 400, color: colonia === c ? "#AB1738" : "#1C1C1E" }}>{c}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <input
+                          value={colonia} onChange={(e) => setColonia(e.target.value)}
+                          placeholder="Ej: Centro, Del Valle"
+                          className="w-full px-4 py-4 rounded-xl text-[16px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
+                          style={{ background: "#FFFFFF", border: "1.5px solid #D1D1D6" }}
+                        />
+                      )}
+                    </div>
+
+                    {/* Calle */}
+                    <div>
+                      <label style={{ fontSize: 13, fontWeight: 700, color: "#636366", display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                        <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#AB1738", color: "white", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>4</span>
+                        Calle y Número
+                      </label>
+                      <input
+                        value={calle} onChange={(e) => setCalle(e.target.value)}
+                        placeholder="Nombre de la calle o avenida"
+                        className="w-full px-4 py-4 rounded-xl text-[16px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none mb-2"
+                        style={{ background: "#FFFFFF", border: "1.5px solid #D1D1D6" }}
+                      />
+                      <div className="flex gap-2">
+                        <input value={numExterior} onChange={(e) => setNumExterior(e.target.value)} placeholder="Núm. Ext."
+                          className="flex-1 px-3 py-3.5 rounded-xl text-[15px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
+                          style={{ background: "#FFFFFF", border: "1.5px solid #D1D1D6" }} />
+                        <input value={numInterior} onChange={(e) => setNumInterior(e.target.value)} placeholder="Int. (opt.)"
+                          className="flex-1 px-3 py-3.5 rounded-xl text-[15px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
+                          style={{ background: "#FFFFFF", border: "1.5px solid #D1D1D6" }} />
+                      </div>
+                    </div>
+
+                    {/* Referencias */}
+                    <div>
+                      <label style={{ fontSize: 13, fontWeight: 700, color: "#BC955B", display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                        <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#BC955B", color: "white", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>5</span>
+                        Entre calles / Referencias <span style={{ fontSize: 11, color: "#8E8E93", fontWeight: 500 }}>(opcional)</span>
+                      </label>
+                      <textarea value={referencias} onChange={(e) => setReferencias(e.target.value)}
+                        placeholder="Ej: Entre Calle 8 y Calle 10, frente a la escuela"
+                        rows={2} className="w-full px-4 py-3.5 rounded-xl text-[15px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none resize-none"
+                        style={{ background: "#FFFFFF", border: "1.5px solid #D1D1D6" }} />
+                    </div>
+
+                    {/* Buscar dirección */}
+                    {canGeocode && (
+                      <button onClick={geocodeAddress} disabled={geoSearchLoading}
+                        className="w-full flex items-center justify-center gap-2 py-4 rounded-xl active:scale-[0.97] transition-transform disabled:opacity-60"
+                        style={{
+                          background: gpsSource === "search" ? "rgba(5,150,105,0.08)" : "linear-gradient(135deg,#AB1738,#8B1028)",
+                          border: gpsSource === "search" ? "1.5px solid rgba(5,150,105,0.25)" : "none",
+                          color: gpsSource === "search" ? "#059669" : "#FFFFFF",
+                          fontSize: 16, fontWeight: 700,
+                          boxShadow: gpsSource === "search" ? "none" : "0 4px 16px rgba(171,23,56,0.25)",
+                        }}
+                      >
+                        {geoSearchLoading ? <><Loader2 className="w-4 h-4 animate-spin" strokeWidth={2} /> Buscando...</>
+                          : gpsSource === "search" ? <><CheckCircle2 className="w-4 h-4" strokeWidth={2} /> Dirección localizada — Volver a buscar</>
+                          : <><MapPin className="w-5 h-5" strokeWidth={2} /> Buscar y localizar dirección</>}
+                      </button>
+                    )}
+
+                    {/* Preview */}
+                    {composedPreview && (
+                      <div className="pt-3 border-t border-[#E5E5EA]">
+                        <p style={{ fontSize: 13, color: "#636366", lineHeight: 1.5 }}>
+                          <span style={{ color: "#AB1738", fontWeight: 700 }}>Dirección: </span>
+                          {composedPreview}{municipio ? `, ${municipio}, Tamaulipas` : ""}
+                        </p>
                       </div>
                     )}
                   </div>
-                ) : (
-                  <div className="relative">
-                    <MapPinned
-                      className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C7C7CC]"
-                      strokeWidth={1.8}
-                    />
-                    <input
-                      value={colonia}
-                      onChange={(e) =>
-                        setColonia(e.target.value)
-                      }
-                      placeholder={
-                        cpColonias.length === 1
-                          ? cpColonias[0]
-                          : "Ej: Centro, Del Valle, Las Flores"
-                      }
-                      className="w-full pl-9 pr-3 py-3 rounded-xl text-[15px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none focus:ring-2 focus:ring-[#AB1738]/20"
-                      style={{
-                        background: "#FFFFFF",
-                        border: colonia
-                          ? "1.5px solid rgba(5,150,105,0.3)"
-                          : "1px solid #D1D1D6",
-                      }}
-                    />
-                  </div>
                 )}
               </div>
 
-              {/* STEP 3: Municipio */}
-              <div>
-                <label
-                  className="text-[12px] text-[#636366] mb-1 flex items-center gap-1"
-                  style={{ fontWeight: 700 }}
-                >
-                  <span
-                    className="w-4 h-4 rounded-full bg-[#AB1738] text-white text-[10px] flex items-center justify-center"
-                    style={{ fontWeight: 700 }}
-                  >
-                    3
-                  </span>
-                  Municipio
-                  {cpMunicipio && (
-                    <span
-                      className="text-[10px] text-[#059669] bg-[#059669]/10 px-1.5 py-0.5 rounded-full ml-1"
-                      style={{ fontWeight: 600 }}
-                    >
-                      Auto
-                    </span>
-                  )}
-                </label>
-                <button
-                  onClick={() => {
-                    setShowMunicipioDD(!showMunicipioDD);
-                    setShowTipoDD(false);
-                    setShowColoniaDD(false);
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-3 rounded-xl text-left"
-                  style={{
-                    background: "#FFFFFF",
-                    border: municipio
-                      ? "1.5px solid rgba(5,150,105,0.3)"
-                      : "1px solid #D1D1D6",
-                  }}
-                >
-                  <span
-                    className={`text-[15px] ${municipio ? "text-[#1C1C1E]" : "text-[#C7C7CC]"}`}
-                    style={{
-                      fontWeight: municipio ? 500 : 400,
-                    }}
-                  >
-                    {municipio || "Seleccionar municipio..."}
-                  </span>
-                  <ChevronDown
-                    className="w-4 h-4 text-[#8E8E93]"
-                    strokeWidth={2}
-                  />
+              {/* Nav */}
+              <div className="flex gap-3 mt-3">
+                <button onClick={goBack} style={btnBack}>← Atrás</button>
+                <button onClick={goNext} disabled={!canStep2} className="active:scale-[0.97] transition-transform" style={btnNext(canStep2)}>
+                  <span>{canStep2 ? `${municipio} →` : "Selecciona municipio"}</span>
+                  {canStep2 && <ChevronRight style={{ width: 20, height: 20 }} strokeWidth={2.5} />}
                 </button>
-                {showMunicipioDD && (
-                  <div
-                    className="mt-1 rounded-xl overflow-hidden border border-[#D1D1D6] max-h-48 overflow-y-auto"
-                    style={{
-                      background: "#FFFFFF",
-                      boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
-                    }}
-                  >
-                    {MUNICIPIOS.map((m) => (
-                      <button
-                        key={m}
-                        onClick={() => {
-                          setMunicipio(m);
-                          setShowMunicipioDD(false);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-[15px] active:bg-[#F2F2F7] transition-colors"
-                        style={{
-                          borderBottom: "0.5px solid #F2F2F7",
-                          background:
-                            municipio === m
-                              ? "rgba(171,23,56,0.04)"
-                              : "transparent",
-                          fontWeight:
-                            municipio === m ? 600 : 400,
-                          color:
-                            municipio === m
-                              ? "#AB1738"
-                              : "#1C1C1E",
-                        }}
-                      >
-                        {municipio === m && (
-                          <CheckCircle2
-                            className="w-3.5 h-3.5 text-[#AB1738] shrink-0"
-                            strokeWidth={2}
-                          />
-                        )}
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
+            </motion.div>
+          )}
 
-              {/* STEP 4: Calle y Número */}
-              <div>
-                <label
-                  className="text-[12px] text-[#636366] mb-1 flex items-center gap-1"
-                  style={{ fontWeight: 700 }}
-                >
-                  <span
-                    className="w-4 h-4 rounded-full bg-[#AB1738] text-white text-[10px] flex items-center justify-center"
-                    style={{ fontWeight: 700 }}
-                  >
-                    4
-                  </span>
-                  Calle y Número
-                </label>
-                <div className="relative mb-2">
-                  <MapPin
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C7C7CC]"
-                    strokeWidth={1.8}
-                  />
-                  <input
-                    value={calle}
-                    onChange={(e) => setCalle(e.target.value)}
-                    placeholder="Nombre de la calle o avenida"
-                    className="w-full pl-9 pr-3 py-3 rounded-xl text-[15px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none focus:ring-2 focus:ring-[#AB1738]/20"
-                    style={{
-                      background: "#FFFFFF",
-                      border: "1px solid #D1D1D6",
-                    }}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <div className="flex-1 relative">
-                    <Hash
-                      className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#C7C7CC]"
-                      strokeWidth={1.8}
-                    />
-                    <input
-                      value={numExterior}
-                      onChange={(e) =>
-                        setNumExterior(e.target.value)
-                      }
-                      placeholder="Núm. Ext."
-                      className="w-full pl-8 pr-2 py-2.5 rounded-lg text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none focus:ring-2 focus:ring-[#AB1738]/20"
-                      style={{
-                        background: "#FFFFFF",
-                        border: "1px solid #D1D1D6",
-                      }}
-                    />
+          {/* ══════════════════════════════════════════════════════
+              PASO 3 — DESCRIPCIÓN + NOTAS DE VOZ
+              ══════════════════════════════════════════════════════ */}
+          {step === 3 && (
+            <motion.div key="step3"
+              initial={{ opacity: 0, x: 32 }} animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -32 }} transition={{ duration: 0.2, ease: "easeInOut" }}
+            >
+              <div style={cardStyle}>
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-5">
+                  <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(171,23,56,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Mic style={{ width: 24, height: 24, color: "#AB1738" }} strokeWidth={2} />
                   </div>
-                  <div className="flex-1 relative">
-                    <Building2
-                      className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#C7C7CC]"
-                      strokeWidth={1.8}
-                    />
-                    <input
-                      value={numInterior}
-                      onChange={(e) =>
-                        setNumInterior(e.target.value)
-                      }
-                      placeholder="Int. (opcional)"
-                      className="w-full pl-8 pr-2 py-2.5 rounded-lg text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none focus:ring-2 focus:ring-[#AB1738]/20"
-                      style={{
-                        background: "#FFFFFF",
-                        border: "1px solid #D1D1D6",
-                      }}
-                    />
+                  <div>
+                    <p style={{ fontSize: 13, color: "#8E8E93", fontWeight: 500 }}>Teclado o voz</p>
+                    <h2 style={{ fontSize: 22, fontWeight: 800, color: "#1C1C1E", letterSpacing: "-0.02em", lineHeight: 1.1 }}>¿Qué ocurrió?</h2>
                   </div>
                 </div>
-              </div>
 
-              {/* STEP 5: Referencias */}
-              <div>
-                <label
-                  className="text-[12px] text-[#636366] mb-1 flex items-center gap-1"
-                  style={{ fontWeight: 700 }}
-                >
-                  <span
-                    className="w-4 h-4 rounded-full bg-[#BC955B] text-white text-[10px] flex items-center justify-center"
-                    style={{ fontWeight: 700 }}
-                  >
-                    5
-                  </span>
-                  Entre calles / Referencias
-                  <span className="text-[10px] text-[#8E8E93] ml-0.5">
-                    (opcional)
-                  </span>
-                </label>
-                <textarea
-                  value={referencias}
-                  onChange={(e) =>
-                    setReferencias(e.target.value)
-                  }
-                  placeholder="Ej: Entre Calle 8 y Calle 10, frente a la escuela primaria"
-                  rows={2}
-                  className="w-full px-3 py-2.5 rounded-xl text-[14px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none resize-none focus:ring-2 focus:ring-[#AB1738]/20"
-                  style={{
-                    background: "#FFFFFF",
-                    border: "1px solid #D1D1D6",
-                  }}
+                <VoiceDescriptionInput
+                  writtenText={descripcion}
+                  onWrittenTextChange={setDescripcion}
+                  voiceNotes={voiceNotes}
+                  onVoiceNotesChange={setVoiceNotes}
                 />
               </div>
 
-              {/* Composed address preview */}
-              {composedPreview && (
-                <div className="pt-2 border-t border-[#E5E5EA]">
-                  <p
-                    className="text-[12px] text-[#636366]"
-                    style={{ lineHeight: 1.5 }}
-                  >
-                    <span
-                      className="text-[#AB1738]"
-                      style={{ fontWeight: 700 }}
-                    >
-                      Dirección:{" "}
-                    </span>
-                    {composedPreview}
-                    {municipio
-                      ? `, ${municipio}, Tamaulipas`
-                      : ""}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* ─── "Buscar dirección" button: geocode from whatever fields the user filled ─── */}
-            {canGeocode && (
-              <button
-                onClick={geocodeAddress}
-                disabled={geoSearchLoading}
-                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl mt-3 active:scale-[0.97] transition-all disabled:opacity-60"
-                style={{
-                  background:
-                    gpsSource === "search"
-                      ? "rgba(5,150,105,0.06)"
-                      : "linear-gradient(135deg, #AB1738, #8B1028)",
-                  border:
-                    gpsSource === "search"
-                      ? "1.5px solid rgba(5,150,105,0.2)"
-                      : "none",
-                  color:
-                    gpsSource === "search"
-                      ? "#059669"
-                      : "#FFFFFF",
-                  fontWeight: 700,
-                  fontSize: "15px",
-                  boxShadow:
-                    gpsSource === "search"
-                      ? "none"
-                      : "0 2px 8px rgba(171,23,56,0.25)",
-                }}
-              >
-                {geoSearchLoading ? (
-                  <>
-                    <Loader2
-                      className="w-4 h-4 animate-spin"
-                      strokeWidth={2}
-                    />
-                    Buscando dirección...
-                  </>
-                ) : gpsSource === "search" ? (
-                  <>
-                    <CheckCircle2
-                      className="w-4 h-4"
-                      strokeWidth={2}
-                    />
-                    Dirección localizada — Buscar de nuevo
-                  </>
-                ) : (
-                  <>
-                    <MapPin
-                      className="w-5 h-5"
-                      strokeWidth={2}
-                    />
-                    Buscar dirección
-                  </>
-                )}
-              </button>
-            )}
-
-            {/* Mini Map Preview — tappable to open map picker to adjust */}
-            {hasPreview &&
-              (gpsSource === "gps" ||
-                gpsSource === "search" ||
-                gpsSource === "pin") && (
-                <div className="mt-3">
-                  <MiniMapPreview
-                    lat={lat!}
-                    lng={lng!}
-                    onTap={openMapPicker}
-                    label={
-                      gpsSource === "gps"
-                        ? "Ubicación GPS del dispositivo"
-                        : gpsSource === "search"
-                          ? composedPreview +
-                            (municipio ? `, ${municipio}` : "")
-                          : gpsSource === "pin"
-                            ? "Pin colocado manualmente en el mapa"
-                            : `Centro de ${municipio}`
-                    }
-                  />
-                </div>
-              )}
-
-            {/* Secondary: "Ajustar pin" or "Colocar pin manualmente" */}
-            {(gpsSource === "search" || gpsSource === "gps") &&
-              hasPreview && (
-                <button
-                  onClick={openMapPicker}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl mt-2 active:scale-[0.97] transition-all"
-                  style={{
-                    background: "rgba(139,92,246,0.05)",
-                    border: "1.5px solid rgba(139,92,246,0.15)",
-                    color: "#7C3AED",
-                    fontWeight: 600,
-                    fontSize: "14px",
-                  }}
-                >
-                  <LocateFixed
-                    className="w-4 h-4"
-                    strokeWidth={2}
-                  />
-                  ¿No es exacta? Ajustar pin en el mapa
+              {/* Nav */}
+              <div className="flex gap-3 mt-3">
+                <button onClick={goBack} style={btnBack}>← Atrás</button>
+                <button onClick={goNext} className="active:scale-[0.97] transition-transform" style={btnNext(true, hasDesc ? "#AB1738" : "#48484A")}>
+                  <FileText style={{ width: 20, height: 20, color: "white" }} strokeWidth={2} />
+                  <span>{hasDesc ? "Siguiente" : "Omitir"}</span>
+                  <ChevronRight style={{ width: 20, height: 20 }} strokeWidth={2.5} />
                 </button>
-              )}
-
-            {/* When no coords at all and no geocode possible, show map picker button */}
-            {!hasPreview && !canGeocode && (
-              <button
-                onClick={openMapPicker}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl mt-3 active:scale-[0.98] transition-all"
-                style={{
-                  background:
-                    "linear-gradient(135deg, #3B82F6, #2563EB)",
-                  color: "#FFFFFF",
-                  fontWeight: 700,
-                  fontSize: "15px",
-                  boxShadow: "0 2px 8px rgba(59,130,246,0.3)",
-                }}
-              >
-                <MapPin className="w-4 h-4" strokeWidth={2} />
-                Seleccionar ubicación en mapa
-              </button>
-            )}
-          </div>
-
-          {/* Descripción */}
-          <div>
-            <label
-              className="text-[13px] text-[#636366] mb-1.5 block"
-              style={{ fontWeight: 600 }}
-            >
-              Descripción
-            </label>
-            <textarea
-              value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
-              placeholder="Describa la situación en campo..."
-              rows={3}
-              className="w-full px-3 py-3 rounded-xl text-[15px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none resize-none"
-              style={{
-                background: "#F2F2F7",
-                border: "1px solid #E5E5EA",
-              }}
-            />
-            <AudioRecorder911
-              values={audioNotes}
-              onChange={setAudioNotes}
-              maxNotes={6}
-            />
-          </div>
-
-          {/* Prioridad */}
-          <div>
-            <label
-              className="text-[13px] text-[#636366] mb-1.5 block"
-              style={{ fontWeight: 600 }}
-            >
-              Prioridad
-            </label>
-            <div className="flex gap-2">
-              {PRIORIDADES.map((p) => (
-                <button
-                  key={p.value}
-                  onClick={() => setPrioridad(p.value)}
-                  className="flex-1 py-2.5 rounded-xl text-[14px] transition-all"
-                  style={{
-                    background:
-                      prioridad === p.value ? p.bg : "#F2F2F7",
-                    border: `1.5px solid ${prioridad === p.value ? p.border : "#E5E5EA"}`,
-                    color:
-                      prioridad === p.value
-                        ? p.color
-                        : "#8E8E93",
-                    fontWeight:
-                      prioridad === p.value ? 700 : 500,
-                  }}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Evidencia */}
-          <div>
-            <label
-              className="text-[13px] text-[#636366] mb-1.5 block"
-              style={{ fontWeight: 600 }}
-            >
-              Evidencia Fotográfica
-            </label>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleImageSelect}
-              className="hidden"
-              accept="image/*"
-              multiple
-            />
-            {imageDataUrls.length === 0 ? (
-              <button
-                onClick={() => !compressingImage && fileInputRef.current?.click()}
-                disabled={compressingImage}
-                className="w-full flex items-center justify-center gap-2 py-4 rounded-xl transition-opacity"
-                style={{
-                  background: "#F2F2F7",
-                  border: "1.5px dashed #C7C7CC",
-                  opacity: compressingImage ? 0.6 : 1,
-                }}
-              >
-                {compressingImage ? (
-                  <Loader2 className="w-5 h-5 text-[#8E8E93] animate-spin" strokeWidth={2} />
-                ) : (
-                  <Camera className="w-5 h-5 text-[#8E8E93]" strokeWidth={1.8} />
-                )}
-                <span
-                  className="text-[14px] text-[#8E8E93]"
-                  style={{ fontWeight: 500 }}
-                >
-                  {compressingImage ? "Procesando imagen…" : "Tomar foto o seleccionar imagen"}
-                </span>
-              </button>
-            ) : (
-              <div
-                className="rounded-xl overflow-hidden border border-[#E5E5EA]"
-                style={{ background: "#F9F9FB" }}
-              >
-                <div className="grid grid-cols-2 gap-2 p-2.5">
-                  {imageDataUrls.map((src, idx) => (
-                    <div
-                      key={`photo-${idx}`}
-                      className="relative rounded-lg overflow-hidden border border-[#E5E5EA]"
-                    >
-                      <img
-                        src={src}
-                        alt={`Preview ${idx + 1}`}
-                        className="w-full h-28 object-cover"
-                      />
-                      <button
-                        onClick={() => removeImageAt(idx)}
-                        className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-1 rounded-md active:opacity-60"
-                        style={{ background: "rgba(0,0,0,0.55)" }}
-                        aria-label={`Quitar imagen ${idx + 1}`}
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-white" strokeWidth={1.8} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between px-3 pb-3 pt-1">
-                  <span className="flex items-center gap-1.5 text-[13px] text-[#636366]">
-                    <ImageIcon className="w-4 h-4" strokeWidth={1.8} />
-                    {imageDataUrls.length} / {MAX_REPORT_IMAGES} imágenes
-                  </span>
-                  <button
-                    onClick={() => !compressingImage && fileInputRef.current?.click()}
-                    disabled={compressingImage || imageDataUrls.length >= MAX_REPORT_IMAGES}
-                    className="px-2.5 py-1.5 rounded-lg text-[12px] active:opacity-60 transition-opacity disabled:opacity-40"
-                    style={{
-                      background: "rgba(171,23,56,0.08)",
-                      color: "#AB1738",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {imageDataUrls.length >= MAX_REPORT_IMAGES
-                      ? "Límite alcanzado"
-                      : "Agregar más"}
-                  </button>
-                </div>
               </div>
-            )}
-          </div>
-
-          {/* Reportado por */}
-          <div>
-            <label
-              className="text-[13px] text-[#636366] mb-1.5 block"
-              style={{ fontWeight: 600 }}
-            >
-              Reportado por
-            </label>
-            <input
-              value={reportadoPor}
-              onChange={(e) => setReportadoPor(e.target.value)}
-              placeholder="Nombre del personal en campo"
-              className="w-full px-3 py-3 rounded-xl text-[15px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
-              style={{
-                background: "#F2F2F7",
-                border: "1px solid #E5E5EA",
-              }}
-            />
-          </div>
-
-          {/* Submit */}
-          <button
-            onClick={handleSubmit}
-            disabled={sending}
-            className="w-full flex items-center justify-center gap-2 py-4 rounded-xl text-white active:scale-[0.97] transition-all disabled:opacity-50"
-            style={{
-              background:
-                "linear-gradient(135deg, #AB1738, #8B1028)",
-              fontWeight: 700,
-              fontSize: "16px",
-              boxShadow:
-                "0 2px 8px rgba(171,23,56,0.2), 0 8px 24px rgba(171,23,56,0.15)",
-            }}
-          >
-            {sending ? (
-              <>
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />{" "}
-                Enviando...
-              </>
-            ) : sent ? (
-              <>
-                <CheckCircle2
-                  className="w-5 h-5"
-                  strokeWidth={2}
-                />{" "}
-                ¡Reporte Enviado!
-              </>
-            ) : (
-              <>
-                <Send className="w-5 h-5" strokeWidth={2} />{" "}
-                Enviar Reporte
-              </>
-            )}
-          </button>
-
-          {sent && (
-            <div
-              className="flex items-start gap-2 p-3 rounded-xl"
-              style={{
-                background: "rgba(5,150,105,0.06)",
-                border: "1px solid rgba(5,150,105,0.15)",
-              }}
-            >
-              <CheckCircle2
-                className="w-4 h-4 text-[#059669] shrink-0 mt-0.5"
-                strokeWidth={2}
-              />
-              <p
-                className="text-[13px] text-[#059669]"
-                style={{ lineHeight: 1.4 }}
-              >
-                Reporte enviado exitosamente. Ya está disponible
-                en el feed del Coordinador Regional.
-              </p>
-            </div>
+            </motion.div>
           )}
-        </div>
-      </div>
 
-      {/* ═══ Historial ═══ */}
-      {history.length > 0 && (
-        <div className="mx-4 mb-4">
-          <div className="flex items-center gap-2 mb-3">
-            <h3
-              className="text-[15px] text-[#1C1C1E]"
-              style={{ fontWeight: 600 }}
+          {/* ══════════════════════════════════════════════════════
+              PASO 4 — PRIORIDAD + FOTO + ENVIAR
+              ══════════════════════════════════════════════════════ */}
+          {step === 4 && (
+            <motion.div key="step4"
+              initial={{ opacity: 0, x: 32 }} animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -32 }} transition={{ duration: 0.2, ease: "easeInOut" }}
             >
-              Historial de Envíos
-            </h3>
-            <div className="flex-1 h-px bg-[#E5E5EA]" />
-            <span className="text-[13px] text-[#8E8E93] tabular-nums">
-              {history.length}
-            </span>
-          </div>
-          <div className="space-y-2">
-            {history.map((r, idx) => {
-              const tipo = TIPOS_EMERGENCIA.find(
-                (t) => t.value === r.tipoEmergencia,
-              );
-              const diffMin = Math.floor(
-                (Date.now() - r.sentAt) / 60000,
-              );
-              const timeLabel =
-                diffMin < 1
-                  ? "Ahora"
-                  : diffMin < 60
-                    ? `Hace ${diffMin} min`
-                    : `Hace ${Math.floor(diffMin / 60)} hr`;
-              const prioColor =
-                r.prioridad === "alta"
-                  ? "#DC2626"
-                  : r.prioridad === "media"
-                    ? "#F59E0B"
-                    : "#059669";
-              const firstHistoryImage =
-                (Array.isArray((r as { imageDataUrls?: string[] }).imageDataUrls)
-                  ? (r as { imageDataUrls?: string[] }).imageDataUrls?.[0]
-                  : undefined) || r.imageDataUrl || null;
-              return (
-                <div
-                  key={`${r.id}-${idx}`}
-                  className="rounded-xl p-3.5"
-                  style={{
-                    background: "#FFFFFF",
-                    border: "1px solid #E5E5EA",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-                  }}
-                >
-                  <div className="flex items-start gap-3">
-                    {firstHistoryImage ? (
-                      <img
-                        src={firstHistoryImage}
-                        alt=""
-                        className="w-12 h-12 rounded-lg object-cover shrink-0"
-                        style={{ border: "1px solid #E5E5EA" }}
-                      />
-                    ) : (
-                      <div
-                        className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0"
-                        style={{
-                          background: tipo?.color
-                            ? `${tipo.color}15`
-                            : "#F2F2F7",
-                        }}
-                      >
-                        {tipo ? (
-                          <tipo.icon
-                            className="w-5 h-5"
-                            style={{ color: tipo.color }}
-                            strokeWidth={2}
-                          />
-                        ) : (
-                          <AlertTriangle
-                            className="w-5 h-5 text-[#8E8E93]"
-                            strokeWidth={2}
-                          />
-                        )}
+              <div style={cardStyle}>
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-5">
+                  <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(171,23,56,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Send style={{ width: 24, height: 24, color: "#AB1738" }} strokeWidth={2} />
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 13, color: "#8E8E93", fontWeight: 500 }}>Último paso</p>
+                    <h2 style={{ fontSize: 22, fontWeight: 800, color: "#1C1C1E", letterSpacing: "-0.02em", lineHeight: 1.1 }}>Detalles y Envío</h2>
+                  </div>
+                </div>
+
+                {/* ── Resumen del reporte ── */}
+                <div className="rounded-2xl p-4 mb-5" style={{ background: "#F9F9FB", border: "1.5px solid #E5E5EA" }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: "#8E8E93", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Resumen</p>
+                  <div className="flex items-center gap-3 mb-2">
+                    {selectedTipo && (
+                      <div style={{ width: 40, height: 40, borderRadius: 12, background: `${selectedTipo.color}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <selectedTipo.icon style={{ width: 22, height: 22, color: selectedTipo.color }} strokeWidth={2} />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ background: prioColor }}
-                        />
-                        <span
-                          className="text-[15px] text-[#1C1C1E] truncate"
-                          style={{ fontWeight: 600 }}
-                        >
-                          {r.tipoEmergencia}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 text-[13px] text-[#8E8E93] mb-1">
-                        <MapPin
-                          className="w-3 h-3 shrink-0"
-                          strokeWidth={1.8}
-                        />
-                        <span className="truncate">
-                          {r.ubicacion}, {r.municipio}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[12px] text-[#8E8E93] flex items-center gap-1">
-                          <Clock
-                            className="w-3 h-3"
-                            strokeWidth={1.8}
-                          />
-                          {timeLabel}
-                        </span>
-                        {r.lat != null && r.lng != null && (
-                          <span className="text-[11px] text-[#059669] flex items-center gap-0.5">
-                            <Navigation
-                              className="w-2.5 h-2.5"
-                              strokeWidth={2}
-                            />{" "}
-                            GPS
-                          </span>
-                        )}
-                        <span
-                          className="text-[12px] text-[#059669] flex items-center gap-1 bg-[#059669]/8 px-1.5 py-0.5 rounded"
-                          style={{ fontWeight: 600 }}
-                        >
-                          <CheckCircle2
-                            className="w-3 h-3"
-                            strokeWidth={2}
-                          />{" "}
-                          Enviado
-                        </span>
-                      </div>
+                      <p style={{ fontSize: 16, fontWeight: 700, color: "#1C1C1E" }}>{tipoEmergencia || "—"}</p>
+                      <p className="truncate" style={{ fontSize: 13, color: "#636366" }}>{municipio}{composedPreview ? ` · ${composedPreview}` : ""}</p>
                     </div>
-                    <span className="text-[11px] text-[#8E8E93] bg-[#F2F2F7] px-2 py-0.5 rounded tabular-nums shrink-0">
-                      {r.folio}
-                    </span>
+                  </div>
+                  {/* Operador que envía */}
+                  <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[#E5E5EA]">
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg,#AB1738,#7C1028)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: "white" }}>
+                        {getOperatorName().split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "#3A3A3C" }} className="truncate">{getOperatorName()}</span>
+                    <span style={{ fontSize: 11, color: "#8E8E93", marginLeft: "auto", flexShrink: 0 }}>En sesión</span>
+                  </div>
+                  {(descripcion.trim() || voiceNotes.length > 0) && (
+                    <div className="mt-2 pt-2 border-t border-[#E5E5EA]">
+                      <p style={{ fontSize: 13, color: "#3A3A3C", lineHeight: 1.5 }}>
+                        {descripcion.trim() || (voiceNotes[0]?.transcription ? `"${voiceNotes[0].transcription.slice(0, 80)}…"` : "—")}
+                      </p>
+                      {voiceNotes.length > 0 && (
+                        <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-md" style={{ fontSize: 12, fontWeight: 700, background: "rgba(171,23,56,0.08)", color: "#AB1738" }}>
+                          <Mic style={{ width: 11, height: 11 }} strokeWidth={2.5} /> {voiceNotes.length} nota{voiceNotes.length > 1 ? "s" : ""} de voz
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Prioridad ── */}
+                <div className="mb-5">
+                  <p style={{ fontSize: 17, fontWeight: 700, color: "#1C1C1E", marginBottom: 12 }}>Prioridad</p>
+                  <div className="flex gap-2.5">
+                    {PRIORIDADES.map((p) => {
+                      const sel = prioridad === p.value;
+                      return (
+                        <button key={p.value} onClick={() => setPrioridad(p.value)}
+                          className="flex-1 rounded-2xl active:scale-[0.96] transition-transform"
+                          style={{
+                            minHeight: 72, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4,
+                            background: sel ? p.bg : "#F2F2F7",
+                            border: `2px solid ${sel ? p.border : "transparent"}`,
+                            boxShadow: sel ? `0 4px 14px ${p.color}30` : "none",
+                          }}
+                        >
+                          <div style={{ width: 10, height: 10, borderRadius: "50%", background: p.color }} />
+                          <span style={{ fontSize: 15, fontWeight: sel ? 800 : 500, color: sel ? p.color : "#636366" }}>{p.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+
+                {/* ── Evidencia multimedia ── */}
+                <div className="mb-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <p style={{ fontSize: 17, fontWeight: 700, color: "#1C1C1E" }}>
+                      Evidencia
+                      <span style={{ fontSize: 14, fontWeight: 400, color: "#8E8E93", marginLeft: 8 }}>(opcional)</span>
+                    </p>
+                    {mediaItems.length > 0 && (
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#AB1738", background: "rgba(171,23,56,0.08)", padding: "2px 10px", borderRadius: 20 }}>
+                        {mediaItems.length}/{MAX_MEDIA}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Thumbnails grid */}
+                  {mediaItems.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      {mediaItems.map((item, idx) => (
+                        <div key={idx} className="relative rounded-xl overflow-hidden" style={{ aspectRatio: "1/1" }}>
+                          {item.type === "image" ? (
+                            <img src={item.dataUrl} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center gap-1" style={{ background: "#1C1C1E" }}>
+                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polygon points="5 3 19 12 5 21 5 3" fill="white" />
+                              </svg>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>VIDEO</span>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => removeMedia(idx)}
+                            className="absolute top-1 right-1 w-6 h-6 flex items-center justify-center rounded-full active:scale-90 transition-transform"
+                            style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}
+                          >
+                            <X style={{ width: 12, height: 12, color: "white" }} strokeWidth={2.5} />
+                          </button>
+                          {/* type badge */}
+                          <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md" style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}>
+                            <span style={{ fontSize: 9, fontWeight: 700, color: "white", textTransform: "uppercase" }}>{item.type === "video" ? "▶ vid" : "img"}</span>
+                          </div>
+                        </div>
+                      ))}
+                      {/* Add more slot */}
+                      {mediaItems.length < MAX_MEDIA && (
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="rounded-xl flex flex-col items-center justify-center gap-1 active:scale-[0.96] transition-transform"
+                          style={{ aspectRatio: "1/1", background: "#F2F2F7", border: "2px dashed #C7C7CC" }}
+                        >
+                          <span style={{ fontSize: 24, color: "#AEAEB2", fontWeight: 300, lineHeight: 1 }}>+</span>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: "#8E8E93" }}>Agregar</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Action buttons (visible when empty or adding) */}
+                  {mediaItems.length < MAX_MEDIA && (
+                    <div className="flex gap-2">
+                      <button onClick={() => cameraRef.current?.click()}
+                        className="flex-1 flex flex-col items-center justify-center gap-1.5 rounded-2xl active:scale-[0.97] transition-transform"
+                        style={{
+                          minHeight: mediaItems.length === 0 ? 88 : 64,
+                          background: mediaItems.length === 0 ? "linear-gradient(135deg,#AB1738,#7C1028)" : "rgba(171,23,56,0.06)",
+                          border: mediaItems.length === 0 ? "none" : "1.5px solid rgba(171,23,56,0.2)",
+                          boxShadow: mediaItems.length === 0 ? "0 4px 16px rgba(171,23,56,0.28)" : "none",
+                        }}
+                      >
+                        <Camera style={{ width: mediaItems.length === 0 ? 26 : 20, height: mediaItems.length === 0 ? 26 : 20, color: mediaItems.length === 0 ? "white" : "#AB1738" }} strokeWidth={2} />
+                        <span style={{ fontSize: 13, fontWeight: 700, color: mediaItems.length === 0 ? "white" : "#AB1738" }}>Cámara</span>
+                      </button>
+                      <button onClick={() => fileInputRef.current?.click()}
+                        className="flex-1 flex flex-col items-center justify-center gap-1.5 rounded-2xl active:scale-[0.97] transition-transform"
+                        style={{ minHeight: mediaItems.length === 0 ? 88 : 64, background: "#F2F2F7", border: "2px dashed #C7C7CC" }}
+                      >
+                        <ImageIcon style={{ width: mediaItems.length === 0 ? 26 : 20, height: mediaItems.length === 0 ? 26 : 20, color: "#636366" }} strokeWidth={1.8} />
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#636366" }}>Galería</span>
+                      </button>
+                      <button onClick={() => videoRef.current?.click()}
+                        className="flex-1 flex flex-col items-center justify-center gap-1.5 rounded-2xl active:scale-[0.97] transition-transform"
+                        style={{ minHeight: mediaItems.length === 0 ? 88 : 64, background: "rgba(59,130,246,0.06)", border: "1.5px solid rgba(59,130,246,0.2)" }}
+                      >
+                        <svg width={mediaItems.length === 0 ? 26 : 20} height={mediaItems.length === 0 ? 26 : 20} viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                        </svg>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#3B82F6" }}>Video</span>
+                      </button>
+                    </div>
+                  )}
+                  {mediaItems.length > 0 && (
+                    <p style={{ fontSize: 12, color: "#8E8E93", textAlign: "center", marginTop: 8 }}>
+                      {MAX_MEDIA - mediaItems.length > 0
+                        ? `Puedes agregar ${MAX_MEDIA - mediaItems.length} archivo${MAX_MEDIA - mediaItems.length > 1 ? "s" : ""} más`
+                        : "Límite de 5 archivos alcanzado"}
+                    </p>
+                  )}
+                </div>
+
+                {/* ── Operador (sesión actual, solo informativo) ── */}
+                <div className="flex items-center gap-3 px-4 py-3.5 rounded-2xl" style={{ background: "#F2F2F7", border: "1.5px solid #E5E5EA" }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: "linear-gradient(135deg,#AB1738,#7C1028)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: "white" }}>
+                      {getOperatorName().split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p style={{ fontSize: 15, fontWeight: 700, color: "#1C1C1E" }} className="truncate">{getOperatorName()}</p>
+                    <p style={{ fontSize: 12, color: "#8E8E93" }}>Operador en sesión · el reporte se registrará a tu nombre</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Nav + Enviar */}
+              <div className="flex gap-3 mt-3">
+                <button onClick={goBack} style={btnBack} disabled={sending}>← Atrás</button>
+                <button
+                  onClick={handleSubmit} disabled={sending}
+                  className="active:scale-[0.97] transition-transform disabled:opacity-60"
+                  style={{ ...btnNext(true), flex: 1 }}
+                >
+                  {sending ? (
+                    <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Enviando...</>
+                  ) : (
+                    <><Send style={{ width: 22, height: 22 }} strokeWidth={2.5} /> ENVIAR REPORTE</>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Historial oculto — no se muestra durante el llenado del formulario */}
     </PullToRefresh>
   );
 }

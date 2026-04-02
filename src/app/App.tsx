@@ -1,5 +1,6 @@
 import { SimpleRouter } from "./components/RouterContext";
 import { LoginScreen } from "./components/LoginScreen";
+import { Home911 } from "./components/Home911";
 import { Dashboard911 } from "./components/Dashboard911";
 import { ReportDetail } from "./components/ReportDetail";
 import { MonitoringDashboard } from "./components/MonitoringDashboard";
@@ -52,7 +53,8 @@ class ErrorBoundary extends React.Component<
 
 const routes = [
   { path: "/", component: LoginScreen },
-  { path: "/911", component: Dashboard911 },
+  { path: "/911", component: Home911 },
+  { path: "/911/nuevo", component: Dashboard911 },
   { path: "/911/:id", component: ReportDetail },
   { path: "/monitoreo", component: MonitoringDashboard },
   { path: "/monitoreo/nuevo", component: MonitoringForm },
