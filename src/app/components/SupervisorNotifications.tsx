@@ -7,7 +7,7 @@ import {
   Activity, BarChart3, CheckCircle2, Image as ImageIcon,
   Eye,
   Bell, Shield, AlertCircle, Info, UserCheck, Clock, Megaphone, ChevronRight,
-  Download, FileText, Paperclip, Loader2,
+  Download, FileText, Paperclip, Loader2, Play,
 } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { ImageLightbox, type LightboxData } from "./ImageLightbox";
@@ -128,24 +128,50 @@ function getStatusDotColor(label: string) {
   }
 }
 
+type VisualFeedMedia = {
+  kind: "image" | "video";
+  src: string;
+  nombre?: string;
+};
+
+function getOrderedVisualMedia(item: FeedItem): VisualFeedMedia[] {
+  const fromEvidence = (item.evidencias || [])
+    .filter((ev) => ev.kind === "image" || ev.kind === "video")
+    .map((ev) => ({
+      kind: ev.kind as "image" | "video",
+      src: ev.src,
+      nombre: ev.nombre,
+    }))
+    .filter((ev) => typeof ev.src === "string" && ev.src.trim().length > 0);
+  if (fromEvidence.length > 0) return fromEvidence;
+
+  return (item.images || [])
+    .filter((src) => typeof src === "string" && src.trim().length > 0)
+    .map((src, idx) => ({
+      kind: "image" as const,
+      src,
+      nombre: `imagen_${idx + 1}`,
+    }));
+}
+
 /* ─── Feed Post Card — Social Feed Style ─── */
 function FeedCard({ item, onOpen, onImageClick }: { item: FeedItem; onOpen: () => void; onImageClick: () => void }) {
   const config = getTypeConfig(item.type);
   const statusDot = getStatusDotColor(item.estatus);
-  const hasImages = item.images && item.images.length > 0;
+  const visualMedia = getOrderedVisualMedia(item);
+  const hasVisualMedia = visualMedia.length > 0;
+  const primaryVisual = hasVisualMedia ? visualMedia[0] : null;
   const isMonitoreo = item.type === "monitoreo";
-  const textBg = !hasImages ? getTextPostBackground(item.id, item.type) : null;
+  const textBg = !hasVisualMedia ? getTextPostBackground(item.id, item.type) : null;
   const [expanded, setExpanded] = useState(false);
 
-  // DEBUG: Log text-only posts with their unique background
-  if (!hasImages && textBg) {
-    console.log(`📊 Text-only post: ${item.id} (${item.type}) → Gradient: ${textBg.gradient.substring(0, 50)}...`);
+  if (!hasVisualMedia && textBg) {
+    console.log(`Text-only post: ${item.id} (${item.type})`);
   }
 
-  // Truncate description to ~250 chars
   const descTruncated = item.descripcion.length > 250 && !expanded;
   const descText = descTruncated
-    ? item.descripcion.slice(0, 250).replace(/\s+\S*$/, "") + "…"
+    ? item.descripcion.slice(0, 250).replace(/\s+\S*$/, "") + "..."
     : item.descripcion;
 
   return (
@@ -154,7 +180,6 @@ function FeedCard({ item, onOpen, onImageClick }: { item: FeedItem; onOpen: () =
       style={{ background: "#FFFFFF" }}
       onClick={onOpen}
     >
-      {/* ═══ Header — Avatar + Name · Time / Rol · Folio ═══ */}
       <div className="px-4 pt-3.5 pb-2.5">
         <div className="flex items-start gap-3">
           <div
@@ -177,9 +202,7 @@ function FeedCard({ item, onOpen, onImageClick }: { item: FeedItem; onOpen: () =
         </div>
       </div>
 
-      {/* ═══ Content body ═══ */}
       <div className="px-4 pb-3">
-        {/* Type label — colored text, no background */}
         <div className="flex items-center gap-1.5 mb-1">
           <config.icon className="w-3.5 h-3.5" style={{ color: config.accentColor }} strokeWidth={2.2} />
           <span className="text-[11px]" style={{ color: config.accentColor, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.05em" }}>
@@ -187,17 +210,14 @@ function FeedCard({ item, onOpen, onImageClick }: { item: FeedItem; onOpen: () =
           </span>
         </div>
 
-        {/* Title — primary scan element */}
         <h3 className="text-[17px] text-[#1C1C1E] mb-1.5" style={{ fontWeight: 600, lineHeight: 1.3 }}>{item.titulo}</h3>
 
-        {/* Monitoreo subtitle */}
         {isMonitoreo && (
           <p className="text-[13px] text-[#636366] mb-1.5">
             {(item as Monitoreo).datosGenerales.tipoMonitoreo} · {(item as Monitoreo).datosGenerales.subtipoMonitoreo}
           </p>
         )}
 
-        {/* Location + Status — single metadata line */}
         <div className="flex items-center gap-1.5 text-[13px] text-[#8E8E93] mb-2.5">
           <MapPin className="w-3.5 h-3.5 shrink-0" strokeWidth={1.8} />
           <span className="truncate">{item.ubicacion}, {item.municipio}</span>
@@ -208,8 +228,7 @@ function FeedCard({ item, onOpen, onImageClick }: { item: FeedItem; onOpen: () =
           </span>
         </div>
 
-        {/* Description — truncated with "ver más" like Facebook */}
-        {hasImages && (
+        {hasVisualMedia && (
           <p className="text-[15px] text-[#3A3A3C]" style={{ lineHeight: 1.5 }}>
             {descText}
             {descTruncated && (
@@ -225,29 +244,58 @@ function FeedCard({ item, onOpen, onImageClick }: { item: FeedItem; onOpen: () =
         )}
       </div>
 
-      {/* ═══ Visual block ═══ */}
-      {hasImages ? (
-        /* Image with padding + radius (Twitter/X style) */
+      {hasVisualMedia ? (
         <div className="px-3 pb-3">
-          <div
-            className="relative overflow-hidden cursor-pointer"
-            style={{ borderRadius: "12px" }}
-            onClick={(e) => { e.stopPropagation(); onImageClick(); }}
-          >
-            <ImageWithFallback src={item.images[0]} alt={item.titulo} className="w-full h-52 object-cover" />
-            {item.images.length > 1 && (
+          <div className="relative overflow-hidden" style={{ borderRadius: "12px" }}>
+            {primaryVisual?.kind === "image" ? (
+              <div
+                className="relative cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); onImageClick(); }}
+              >
+                <ImageWithFallback src={primaryVisual.src} alt={item.titulo} className="w-full h-52 object-cover" />
+              </div>
+            ) : (
+              <div
+                className="relative"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >
+                <video
+                  src={primaryVisual?.src}
+                  className="w-full h-52 object-cover bg-[#1C1C1E]"
+                  controls
+                  playsInline
+                  preload="metadata"
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div
+                    className="w-12 h-12 rounded-full flex items-center justify-center"
+                    style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }}
+                  >
+                    <Play className="w-5 h-5 text-white fill-white ml-0.5" strokeWidth={1.5} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {visualMedia.length > 1 && (
               <div
                 className="absolute bottom-2.5 right-2.5 text-white text-[12px] px-2.5 py-1 rounded-full flex items-center gap-1"
                 style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)" }}
               >
-                <ImageIcon className="w-3.5 h-3.5" strokeWidth={2} />
-                +{item.images.length - 1}
+                {primaryVisual?.kind === "video" ? (
+                  <Play className="w-3.5 h-3.5 fill-white" strokeWidth={1.8} />
+                ) : (
+                  <ImageIcon className="w-3.5 h-3.5" strokeWidth={2} />
+                )}
+                +{visualMedia.length - 1}
               </div>
             )}
           </div>
         </div>
       ) : (
-        /* Gradient text block — layered: gradient + pattern + glass + text */
         <div
           className="relative overflow-hidden flex items-center justify-center"
           style={{
@@ -255,13 +303,11 @@ function FeedCard({ item, onOpen, onImageClick }: { item: FeedItem; onOpen: () =
             minHeight: "208px",
           }}
         >
-          {/* Layer 2: Geometric pattern — unique per post */}
           <div
             className="absolute inset-0"
             style={textBg!.pattern}
           />
 
-          {/* Layer 4: Text */}
           <p
             className="relative z-10 text-white text-center px-6 py-5"
             style={{
@@ -1128,9 +1174,10 @@ export function SupervisorNotifications() {
   }, [navView]);
 
   const openLightbox = (item: FeedItem) => {
-    if (item.images && item.images.length > 0) {
+    const imageMedia = getOrderedVisualMedia(item).filter((media) => media.kind === "image");
+    if (imageMedia.length > 0) {
       setLightboxData({
-        images: item.images,
+        images: imageMedia.map((media) => media.src),
         title: item.titulo,
         timestamp: `${item.relativeTime} · ${item.timestamp}`,
         description: item.descripcion,

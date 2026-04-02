@@ -11,6 +11,7 @@ export interface TrazabilidadItem {
   hora: string;
   mensaje: string;
   audioSrc?: string;
+  videoSrc?: string;
   transcript?: string;
 }
 
@@ -1021,6 +1022,10 @@ export function getFeedItemById(id: string): FeedItem | undefined {
       municipio?: string;
       prioridad?: "alta" | "media" | "baja";
       reportadoPor?: string;
+      mediaItems?: Array<{
+        type?: "image" | "video";
+        dataUrl?: string;
+      }>;
       imageDataUrls?: string[];
       imageDataUrl?: string | null;
       audioNotes?: Array<{
@@ -1142,16 +1147,32 @@ export function getFeedItemById(id: string): FeedItem | undefined {
       baja: "Registrado",
     };
 
-    const images = (Array.isArray(found.imageDataUrls) ? found.imageDataUrls : [])
-      .filter((url) => typeof url === "string" && url.length > 0 && url !== IMAGE_LOCAL_ONLY);
-    if (
-      images.length === 0 &&
-      typeof found.imageDataUrl === "string" &&
-      found.imageDataUrl.length > 0 &&
-      found.imageDataUrl !== IMAGE_LOCAL_ONLY
-    ) {
-      images.push(found.imageDataUrl);
+    const mediaItems = (Array.isArray(found.mediaItems) ? found.mediaItems : [])
+      .map((item) => {
+        const kind = item?.type === "video" ? "video" : "image";
+        const src = typeof item?.dataUrl === "string" ? item.dataUrl.trim() : "";
+        if (!src || src === IMAGE_LOCAL_ONLY) return null;
+        return { kind, src };
+      })
+      .filter((item): item is { kind: "image" | "video"; src: string } => item !== null);
+
+    if (mediaItems.length === 0) {
+      const fallbackImages = (Array.isArray(found.imageDataUrls) ? found.imageDataUrls : [])
+        .filter((url) => typeof url === "string" && url.length > 0 && url !== IMAGE_LOCAL_ONLY);
+      if (
+        fallbackImages.length === 0 &&
+        typeof found.imageDataUrl === "string" &&
+        found.imageDataUrl.length > 0 &&
+        found.imageDataUrl !== IMAGE_LOCAL_ONLY
+      ) {
+        fallbackImages.push(found.imageDataUrl);
+      }
+      fallbackImages.forEach((src) => mediaItems.push({ kind: "image", src }));
     }
+
+    const images = mediaItems
+      .filter((item) => item.kind === "image")
+      .map((item) => item.src);
 
     const audioNotes = normalizeAudioNotes();
     const transcriptLines = audioNotes
@@ -1199,14 +1220,38 @@ export function getFeedItemById(id: string): FeedItem | undefined {
       },
     ];
 
-    if (images.length > 0) {
+    if (mediaItems.length > 0) {
+      const imageCount = mediaItems.filter((item) => item.kind === "image").length;
+      const videoCount = mediaItems.filter((item) => item.kind === "video").length;
+      const visualSummary: string[] = [];
+      if (imageCount > 0) {
+        visualSummary.push(`${imageCount} ${imageCount === 1 ? "imagen" : "imagenes"}`);
+      }
+      if (videoCount > 0) {
+        visualSummary.push(`${videoCount} ${videoCount === 1 ? "video" : "videos"}`);
+      }
       trazabilidad.push({
         actor: reportadoPor,
         tipo: "Evidencia",
         hora,
-        mensaje: "Evidencia fotográfica adjunta desde dispositivo móvil.",
+        mensaje:
+          visualSummary.length > 0
+            ? `Evidencia multimedia adjunta: ${visualSummary.join(", ")}.`
+            : "Evidencia multimedia adjunta desde dispositivo móvil.",
       });
     }
+
+    mediaItems
+      .filter((item) => item.kind === "video")
+      .forEach((item, idx) => {
+        trazabilidad.push({
+          actor: reportadoPor,
+          tipo: "Evidencia",
+          hora,
+          mensaje: `Video ${idx + 1} adjunto desde dispositivo móvil.`,
+          videoSrc: item.src,
+        });
+      });
 
     audioNotes.forEach((note, idx) => {
       const shortTranscript =
@@ -1227,6 +1272,25 @@ export function getFeedItemById(id: string): FeedItem | undefined {
       });
     });
 
+    let imageSeq = 0;
+    let videoSeq = 0;
+    const visualEvidencias: EvidenciaMonitoreo[] = mediaItems.map((item) => {
+      if (item.kind === "image") {
+        imageSeq += 1;
+        return {
+          kind: "image",
+          nombre: `evidencia_${imageSeq}.jpg`,
+          src: item.src,
+        };
+      }
+      videoSeq += 1;
+      return {
+        kind: "video",
+        nombre: `video_${videoSeq}.mp4`,
+        src: item.src,
+      };
+    });
+
     const audioEvidencias: EvidenciaMonitoreo[] = audioNotes
       .filter((note) => note.src && note.src !== AUDIO_LOCAL_ONLY)
       .map((note, idx) => ({
@@ -1237,7 +1301,7 @@ export function getFeedItemById(id: string): FeedItem | undefined {
       }));
 
     const evidenceCount =
-      images.length +
+      mediaItems.length +
       audioNotes.filter((note) => note.src.length > 0 || note.transcript.length > 0)
         .length;
 
@@ -1268,7 +1332,7 @@ export function getFeedItemById(id: string): FeedItem | undefined {
           : undefined,
       estatus: statusMap[prioridad],
       images,
-      evidencias: audioEvidencias,
+      evidencias: [...visualEvidencias, ...audioEvidencias],
       kpis: {
         personal: prioridad === "alta" ? 4 : prioridad === "media" ? 2 : 1,
         unidades: prioridad === "alta" ? 2 : 1,

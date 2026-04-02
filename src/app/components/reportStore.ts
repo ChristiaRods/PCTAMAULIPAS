@@ -19,6 +19,8 @@ export interface SubmittedAudioNote {
 export interface MediaItem {
   type: "image" | "video";
   dataUrl: string;
+  mimeType?: string;
+  fileName?: string;
 }
 
 export interface SubmittedReport {
@@ -30,6 +32,7 @@ export interface SubmittedReport {
   descripcion: string;
   prioridad: "alta" | "media" | "baja";
   reportadoPor: string;
+  mediaItems?: MediaItem[];
   imageDataUrls: string[];
   // Legacy field kept for backward compatibility with older cached reports.
   imageDataUrl?: string | null;
@@ -129,7 +132,7 @@ function ensureAudioNotes(report: SubmittedReport): SubmittedAudioNote[] {
   ];
 }
 
-function normalizeImageDataUrls(report: SubmittedReport): string[] {
+function normalizeLegacyImageDataUrls(report: SubmittedReport): string[] {
   const fromArray = Array.isArray(report.imageDataUrls)
     ? report.imageDataUrls.filter((url) => typeof url === "string" && url.trim().length > 0)
     : [];
@@ -139,8 +142,50 @@ function normalizeImageDataUrls(report: SubmittedReport): string[] {
   return legacy ? [legacy] : [];
 }
 
+function normalizeMediaItems(report: SubmittedReport): MediaItem[] {
+  const fromArray = Array.isArray(report.mediaItems)
+    ? report.mediaItems
+        .map((item) => {
+          const nextType = item?.type === "video" ? "video" : "image";
+          const nextDataUrl =
+            typeof item?.dataUrl === "string" ? item.dataUrl.trim() : "";
+          if (!nextDataUrl) return null;
+          return {
+            type: nextType,
+            dataUrl: nextDataUrl,
+            mimeType:
+              typeof item?.mimeType === "string" && item.mimeType.trim().length > 0
+                ? item.mimeType.trim()
+                : undefined,
+            fileName:
+              typeof item?.fileName === "string" && item.fileName.trim().length > 0
+                ? item.fileName.trim()
+                : undefined,
+          } as MediaItem;
+        })
+        .filter((item): item is MediaItem => item !== null)
+    : [];
+  if (fromArray.length > 0) return fromArray;
+
+  const legacyImages = normalizeLegacyImageDataUrls(report);
+  return legacyImages.map((src) => ({ type: "image", dataUrl: src }));
+}
+
+function normalizeImageDataUrls(report: SubmittedReport): string[] {
+  const fromMedia = normalizeMediaItems(report)
+    .filter((item) => item.type === "image")
+    .map((item) => item.dataUrl)
+    .filter((url) => url.trim().length > 0);
+  if (fromMedia.length > 0) return fromMedia;
+  return normalizeLegacyImageDataUrls(report);
+}
+
 function normalizeReport(report: SubmittedReport): SubmittedReport {
   const normalizedNotes = ensureAudioNotes(report);
+  const normalizedMedia = normalizeMediaItems(report);
+  const normalizedMediaImages = normalizedMedia
+    .filter((item) => item.type === "image")
+    .map((item) => item.dataUrl);
   const normalizedImages = normalizeImageDataUrls(report);
   const firstTranscript =
     normalizedNotes.map((n) => n.transcript.trim()).find((text) => text.length > 0) || null;
@@ -148,8 +193,12 @@ function normalizeReport(report: SubmittedReport): SubmittedReport {
 
   return {
     ...report,
-    imageDataUrls: normalizedImages,
-    imageDataUrl: normalizedImages[0] || null,
+    mediaItems: normalizedMedia,
+    imageDataUrls:
+      normalizedMediaImages.length > 0 ? normalizedMediaImages : normalizedImages,
+    imageDataUrl:
+      (normalizedMediaImages.length > 0 ? normalizedMediaImages[0] : normalizedImages[0]) ||
+      null,
     audioNotes: normalizedNotes,
     audioDataUrl:
       typeof report.audioDataUrl === "string"
@@ -166,6 +215,7 @@ function stripHeavyMedia(report: SubmittedReport): SubmittedReport {
   const normalized = normalizeReport(report);
   return {
     ...normalized,
+    mediaItems: [],
     imageDataUrls: [],
     imageDataUrl: null,
     audioNotes: normalized.audioNotes?.map((note) => ({ ...note, src: "" })) || [],
@@ -223,13 +273,29 @@ function mergeServerWithLocal(
   const serverNormalized = normalizeReport(serverReport);
   const localNormalized = normalizeReport(localReport);
 
+  const serverMedia = (serverNormalized.mediaItems || []).filter(
+    (item) => !!item.dataUrl && item.dataUrl !== IMAGE_LOCAL_ONLY,
+  );
+  const localMedia = (localNormalized.mediaItems || []).filter(
+    (item) => !!item.dataUrl && item.dataUrl !== IMAGE_LOCAL_ONLY,
+  );
+  const mediaItems = serverMedia.length > 0
+    ? serverNormalized.mediaItems || []
+    : localMedia.length > 0
+      ? localNormalized.mediaItems || []
+      : serverNormalized.mediaItems || [];
+
+  const imageDataUrls = mediaItems
+    .filter((item) => item.type === "image")
+    .map((item) => item.dataUrl);
+
   const serverImages = serverNormalized.imageDataUrls.filter(
     (url) => !!url && url !== IMAGE_LOCAL_ONLY,
   );
   const localImages = localNormalized.imageDataUrls.filter(
     (url) => !!url && url !== IMAGE_LOCAL_ONLY,
   );
-  const imageDataUrls = serverImages.length > 0
+  const fallbackImageDataUrls = serverImages.length > 0
     ? serverNormalized.imageDataUrls
     : localImages.length > 0
       ? localNormalized.imageDataUrls
@@ -242,8 +308,13 @@ function mergeServerWithLocal(
 
   return normalizeReport({
     ...serverNormalized,
-    imageDataUrls,
-    imageDataUrl: imageDataUrls[0] || null,
+    mediaItems,
+    imageDataUrls:
+      imageDataUrls.length > 0 ? imageDataUrls : fallbackImageDataUrls,
+    imageDataUrl:
+      imageDataUrls[0] ||
+      fallbackImageDataUrls[0] ||
+      null,
     audioNotes: mergedAudioNotes,
     audioDataUrl: serverNormalized.audioDataUrl || localNormalized.audioDataUrl || null,
     audioTranscript: serverNormalized.audioTranscript || localNormalized.audioTranscript || null,
@@ -325,16 +396,45 @@ function dataUrlToFile(dataUrl: string, fallbackName: string): File {
   return new File([bytes], `${fallbackName}.${ext}`, { type: mime });
 }
 
-async function uploadEvidenceDataUrl(
-  dataUrl: string,
+async function sourceToFile(
+  source: string,
+  fallbackName: string,
+  mimeTypeHint?: string,
+): Promise<File | null> {
+  if (source.startsWith("data:")) {
+    return dataUrlToFile(source, fallbackName);
+  }
+
+  if (source.startsWith("blob:")) {
+    const res = await fetch(source);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const mime = blob.type || mimeTypeHint || "application/octet-stream";
+    const extRaw = mime.split("/")[1] || "bin";
+    const ext = extRaw.split(";")[0].replace(/[^a-zA-Z0-9]/g, "") || "bin";
+    return new File([blob], `${fallbackName}.${ext}`, { type: mime });
+  }
+
+  return null;
+}
+
+async function uploadEvidenceSource(
+  source: string,
   folder: "reports" | "monitoring",
+  mimeTypeHint?: string,
+  fallbackName = `evidence-${Date.now()}`,
 ): Promise<string | null> {
   try {
+    if (!source) return null;
+    if (!source.startsWith("data:") && !source.startsWith("blob:")) {
+      return source;
+    }
     if (!API_BASE) {
       console.error("[reportStore] API_BASE is empty. Verify Supabase env vars.");
       return null;
     }
-    const file = dataUrlToFile(dataUrl, `evidence-${Date.now()}`);
+    const file = await sourceToFile(source, fallbackName, mimeTypeHint);
+    if (!file) return null;
     const formData = new FormData();
     formData.append("file", file);
     formData.append("folder", folder);
@@ -363,39 +463,56 @@ export async function saveReport(
 ): Promise<{
   success: boolean;
   push?: { sent: number; total: number };
-  uploadFailures?: { images: number; audio: number };
+  uploadFailures?: { images: number; videos: number; audio: number };
   error?: string;
 }> {
   if (!API_BASE) {
     return {
       success: false,
       error: "API_BASE missing. Verify VITE_SUPABASE_PROJECT_ID and VITE_SUPABASE_ANON_KEY.",
-      uploadFailures: { images: 0, audio: 0 },
+      uploadFailures: { images: 0, videos: 0, audio: 0 },
     };
   }
 
   const reportToSave = normalizeReport(report);
   let failedImageUploads = 0;
+  let failedVideoUploads = 0;
   let failedAudioUploads = 0;
 
-  const uploadedImages: string[] = [];
-  for (const imageSrc of reportToSave.imageDataUrls) {
-    let src = imageSrc;
-    if (src && src.startsWith("data:")) {
-      const uploadedUrl = await uploadEvidenceDataUrl(src, "reports");
+  const uploadedMediaItems: MediaItem[] = [];
+  for (const item of reportToSave.mediaItems || []) {
+    let src = item.dataUrl;
+    if (src && (src.startsWith("data:") || src.startsWith("blob:"))) {
+      const uploadedUrl = await uploadEvidenceSource(
+        src,
+        "reports",
+        item.mimeType,
+        `${item.type}-evidence-${Date.now()}`,
+      );
       if (uploadedUrl) src = uploadedUrl;
+      else if (item.type === "video") failedVideoUploads += 1;
       else failedImageUploads += 1;
     }
-    uploadedImages.push(src);
+    uploadedMediaItems.push({ ...item, dataUrl: src });
   }
+  reportToSave.mediaItems = uploadedMediaItems;
+
+  const uploadedImages = uploadedMediaItems
+    .filter((item) => item.type === "image")
+    .map((item) => item.dataUrl);
   reportToSave.imageDataUrls = uploadedImages;
   reportToSave.imageDataUrl = uploadedImages[0] || null;
 
   const uploadedAudioNotes: SubmittedAudioNote[] = [];
   for (const note of ensureAudioNotes(reportToSave)) {
     let src = note.src;
-    if (src && src.startsWith("data:")) {
-      const uploadedUrl = await uploadEvidenceDataUrl(src, "reports");
+    if (src && (src.startsWith("data:") || src.startsWith("blob:"))) {
+      const uploadedUrl = await uploadEvidenceSource(
+        src,
+        "reports",
+        note.mimeType,
+        `audio-evidence-${Date.now()}`,
+      );
       if (uploadedUrl) src = uploadedUrl;
       else failedAudioUploads += 1;
     }
@@ -445,7 +562,11 @@ export async function saveReport(
       return {
         success: false,
         error,
-        uploadFailures: { images: failedImageUploads, audio: failedAudioUploads },
+        uploadFailures: {
+          images: failedImageUploads,
+          videos: failedVideoUploads,
+          audio: failedAudioUploads,
+        },
       };
     }
 
@@ -456,14 +577,22 @@ export async function saveReport(
     return {
       success: true,
       push: data.push,
-      uploadFailures: { images: failedImageUploads, audio: failedAudioUploads },
+      uploadFailures: {
+        images: failedImageUploads,
+        videos: failedVideoUploads,
+        audio: failedAudioUploads,
+      },
     };
   } catch (err) {
     console.error(`[reportStore] Server sync error (report saved locally): ${err}`);
     return {
       success: false,
       error: String(err),
-      uploadFailures: { images: failedImageUploads, audio: failedAudioUploads },
+      uploadFailures: {
+        images: failedImageUploads,
+        videos: failedVideoUploads,
+        audio: failedAudioUploads,
+      },
     };
   }
 }
@@ -531,11 +660,36 @@ export function createReport(data: {
   const audioNotes = normalizeAudioNotes(data.audioNotes);
   const firstTranscript = audioNotes.map((n) => n.transcript.trim()).find((text) => text.length > 0) || null;
   const firstAudioSrc = audioNotes.find((n) => n.src)?.src || null;
-  const mediaImageDataUrls = (Array.isArray(data.mediaItems) ? data.mediaItems : [])
-    .filter((item) => item && item.type === "image" && typeof item.dataUrl === "string")
+
+  const mediaItemsFromPayload = (Array.isArray(data.mediaItems) ? data.mediaItems : [])
+    .map((item) => {
+      const nextType = item?.type === "video" ? "video" : "image";
+      const nextDataUrl =
+        typeof item?.dataUrl === "string" ? item.dataUrl.trim() : "";
+      if (!nextDataUrl) return null;
+      return {
+        type: nextType,
+        dataUrl: nextDataUrl,
+        mimeType:
+          typeof item?.mimeType === "string" && item.mimeType.trim().length > 0
+            ? item.mimeType.trim()
+            : undefined,
+        fileName:
+          typeof item?.fileName === "string" && item.fileName.trim().length > 0
+            ? item.fileName.trim()
+            : undefined,
+      } as MediaItem;
+    })
+    .filter((item): item is MediaItem => item !== null);
+
+  const mediaImageDataUrls = mediaItemsFromPayload
+    .filter((item) => item.type === "image")
     .map((item) => item.dataUrl);
   const imageDataUrls = (Array.isArray(data.imageDataUrls) ? data.imageDataUrls : mediaImageDataUrls)
     .filter((url) => typeof url === "string" && url.trim().length > 0);
+  const mediaItems = mediaItemsFromPayload.length > 0
+    ? mediaItemsFromPayload
+    : imageDataUrls.map((url) => ({ type: "image" as const, dataUrl: url }));
 
   return {
     id: folio,
@@ -548,6 +702,7 @@ export function createReport(data: {
       "Pendiente de captura. Informacion en proceso de actualizacion por personal en campo.",
     prioridad: data.prioridad,
     reportadoPor: data.reportadoPor || "Personal de Campo (sin identificar)",
+    mediaItems,
     imageDataUrls,
     imageDataUrl: imageDataUrls[0] || data.imageDataUrl || null,
     audioNotes,
@@ -643,9 +798,20 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
     baja: "Registrado",
   };
 
-  const images: string[] = normalized.imageDataUrls.filter(
-    (src) => src && src !== IMAGE_LOCAL_ONLY,
-  );
+  const visualMedia = (normalized.mediaItems || [])
+    .filter(
+      (item) =>
+        (item.type === "image" || item.type === "video") &&
+        !!item.dataUrl &&
+        item.dataUrl !== IMAGE_LOCAL_ONLY,
+    )
+    .map((item) => ({
+      kind: item.type,
+      src: item.dataUrl,
+    }));
+  const images: string[] = visualMedia
+    .filter((item) => item.kind === "image")
+    .map((item) => item.src);
 
   const hora = normalized.timestamp.split(", ")[1] || "00:00";
   const safeDescription = primaryDescription;
@@ -668,14 +834,38 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
     },
   ];
 
-  if (images.length > 0) {
+  if (visualMedia.length > 0) {
+    const imageCount = visualMedia.filter((item) => item.kind === "image").length;
+    const videoCount = visualMedia.filter((item) => item.kind === "video").length;
+    const visualSummary: string[] = [];
+    if (imageCount > 0) {
+      visualSummary.push(`${imageCount} ${imageCount === 1 ? "imagen" : "imagenes"}`);
+    }
+    if (videoCount > 0) {
+      visualSummary.push(`${videoCount} ${videoCount === 1 ? "video" : "videos"}`);
+    }
     trazabilidad.push({
       actor: normalized.reportadoPor,
       tipo: "Evidencia",
       hora,
-      mensaje: "Evidencia fotografica adjunta desde dispositivo movil.",
+      mensaje:
+        visualSummary.length > 0
+          ? `Evidencia multimedia adjunta: ${visualSummary.join(", ")}.`
+          : "Evidencia multimedia adjunta desde dispositivo movil.",
     });
   }
+
+  visualMedia
+    .filter((item) => item.kind === "video")
+    .forEach((item, idx) => {
+      trazabilidad.push({
+        actor: normalized.reportadoPor,
+        tipo: "Evidencia",
+        hora,
+        mensaje: `Video ${idx + 1} adjunto desde dispositivo movil.`,
+        videoSrc: item.src,
+      });
+    });
 
   audioNotes.forEach((note, idx) => {
     const transcript = note.transcript.trim();
@@ -702,6 +892,25 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
     });
   });
 
+  let imageSeq = 0;
+  let videoSeq = 0;
+  const visualEvidencias = visualMedia.map((item) => {
+    if (item.kind === "image") {
+      imageSeq += 1;
+      return {
+        kind: "image" as const,
+        nombre: `evidencia_${imageSeq}.jpg`,
+        src: item.src,
+      };
+    }
+    videoSeq += 1;
+    return {
+      kind: "video" as const,
+      nombre: `video_${videoSeq}.mp4`,
+      src: item.src,
+    };
+  });
+
   const audioEvidencias = audioNotes
     .filter((note) => note.src && note.src !== AUDIO_LOCAL_ONLY)
     .map((note, idx) => ({
@@ -712,7 +921,7 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
     }));
 
   const evidenciasCount =
-    images.length +
+    visualMedia.length +
     audioNotes.filter((note) => note.src.length > 0 || note.transcript.trim().length > 0).length;
 
   return {
@@ -739,7 +948,7 @@ export function toFeedItem(report: SubmittedReport): Reporte911 {
         : undefined,
     estatus: statusMap[normalized.prioridad] || "Registrado",
     images,
-    evidencias: audioEvidencias,
+    evidencias: [...visualEvidencias, ...audioEvidencias],
     kpis: {
       personal: normalized.prioridad === "alta" ? 4 : normalized.prioridad === "media" ? 2 : 1,
       unidades: normalized.prioridad === "alta" ? 2 : 1,

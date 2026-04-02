@@ -450,8 +450,11 @@ routePost("/files/upload-evidence", async (c) => {
     if (!file) {
       return c.json({ error: "No file provided" }, 400);
     }
-    if (file.size > 8 * 1024 * 1024) {
-      return c.json({ error: "File too large (max 8MB)" }, 400);
+    const isVideo = (file.type || "").toLowerCase().startsWith("video/");
+    const maxSizeBytes = isVideo ? 40 * 1024 * 1024 : 8 * 1024 * 1024;
+    const maxSizeMb = isVideo ? 40 : 8;
+    if (file.size > maxSizeBytes) {
+      return c.json({ error: `File too large (max ${maxSizeMb}MB)` }, 400);
     }
 
     const supabase = getSupabaseAdmin();

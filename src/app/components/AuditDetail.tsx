@@ -2,7 +2,7 @@ import { AppHeader } from "./AppHeader";
 import {
   MapPin, Clock, AlertTriangle, Users, Truck, Heart, MessageSquare,
   Image as ImageIcon, Activity, ChevronDown, ChevronUp, Eye, Navigation,
-  CheckCircle2, FileText, BarChart3, Droplets, Mic, Video, File,
+  CheckCircle2, FileText, BarChart3, Droplets, Mic, Video, Play, File,
   ChevronRight,
 } from "lucide-react";
 import { useParams } from "./RouterContext";
@@ -162,6 +162,17 @@ function ThreadReply({ entry, isLast }: { entry: TrazabilidadItem; isLast: boole
               />
             </div>
           )}
+          {entry.videoSrc && (
+            <div className="mt-2.5">
+              <video
+                controls
+                playsInline
+                preload="metadata"
+                src={entry.videoSrc}
+                className="w-full rounded-lg bg-[#1C1C1E]"
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -188,6 +199,31 @@ function formatDuration(min: number): string {
 }
 
 /* ─── Human-readable date formatter ─── */
+type VisualEvidence = {
+  kind: "image" | "video";
+  src: string;
+  nombre: string;
+};
+
+function getOrderedVisualEvidence(item: FeedItem): VisualEvidence[] {
+  const fromEvidence = (item.evidencias || [])
+    .filter((ev) => ev.kind === "image" || ev.kind === "video")
+    .map((ev) => ({
+      kind: ev.kind as "image" | "video",
+      src: ev.src,
+      nombre: ev.nombre,
+    }))
+    .filter((ev) => typeof ev.src === "string" && ev.src.trim().length > 0);
+  if (fromEvidence.length > 0) return fromEvidence;
+
+  return (item.images || [])
+    .filter((src) => typeof src === "string" && src.trim().length > 0)
+    .map((src, idx) => ({
+      kind: "image" as const,
+      src,
+      nombre: `Evidencia ${idx + 1}`,
+    }));
+}
 const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 function formatHumanDate(ts: string): string {
   // ts = "05/03/2026, 14:22"
@@ -209,20 +245,58 @@ function Reporte911Detail({ item, onImageClick }: { item: Reporte911; onImageCli
   const coords = getCoordsForItem(item.municipio, item.coords);
   const isExactGPS = !!item.coords;
   const [showMapModal, setShowMapModal] = useState(false);
+  const visualMedia = getOrderedVisualEvidence(item);
+  const primaryVisual = visualMedia[0];
+
   return (
     <>
-      {/* Photo */}
-      {item.images.length > 0 && (
+      {/* Photo / Video */}
+      {primaryVisual && (
         <div className="px-4 pb-3">
-          <div className="relative rounded-xl overflow-hidden border border-[#E5E5EA] cursor-pointer" onClick={() => onImageClick(0)}>
-            <ImageWithFallback src={item.images[0]} alt={item.titulo} className="w-full h-48 object-cover" />
-            {item.images.length > 1 && (
-              <div className="absolute bottom-2.5 right-2.5 text-white text-[13px] px-3 py-1.5 rounded-lg flex items-center gap-1.5 bg-[#1C1C1E] border border-[#3A3A3C]">
-                <ImageIcon className="w-4 h-4" strokeWidth={2} />
-                +{item.images.length - 1} más
+          {primaryVisual.kind === "image" ? (
+            <div
+              className="relative rounded-xl overflow-hidden border border-[#E5E5EA] cursor-pointer"
+              onClick={() => onImageClick(0)}
+            >
+              <ImageWithFallback src={primaryVisual.src} alt={item.titulo} className="w-full h-48 object-cover" />
+              {visualMedia.length > 1 && (
+                <div className="absolute bottom-2.5 right-2.5 text-white text-[13px] px-3 py-1.5 rounded-lg flex items-center gap-1.5 bg-[#1C1C1E] border border-[#3A3A3C]">
+                  <ImageIcon className="w-4 h-4" strokeWidth={2} />
+                  +{visualMedia.length - 1} más
+                </div>
+              )}
+            </div>
+          ) : (
+            <div
+              className="relative rounded-xl overflow-hidden border border-[#E5E5EA]"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+            >
+              <video
+                src={primaryVisual.src}
+                className="w-full h-48 object-cover bg-[#1C1C1E]"
+                controls
+                playsInline
+                preload="metadata"
+                onClick={(e) => e.stopPropagation()}
+              />
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div
+                  className="w-12 h-12 rounded-full flex items-center justify-center"
+                  style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }}
+                >
+                  <Play className="w-5 h-5 text-white fill-white ml-0.5" strokeWidth={1.5} />
+                </div>
               </div>
-            )}
-          </div>
+              {visualMedia.length > 1 && (
+                <div className="absolute bottom-2.5 right-2.5 text-white text-[13px] px-3 py-1.5 rounded-lg flex items-center gap-1.5 bg-[#1C1C1E] border border-[#3A3A3C]">
+                  <Play className="w-4 h-4 fill-white" strokeWidth={1.8} />
+                  +{visualMedia.length - 1}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -468,19 +542,9 @@ export function AuditDetail() {
   const visibleThread = showAllThread ? trazabilidad : trazabilidad.slice(0, 4);
   const hiddenCount = trazabilidad.length - 4;
 
-  const openLightbox = (startIndex: number) => {
-    if (item.images.length > 0) {
-      setLightboxData({
-        images: item.images,
-        title: item.titulo,
-        timestamp: `${item.relativeTime} · ${item.timestamp}`,
-        description: item.descripcion,
-        startIndex,
-      });
-    }
-  };
+  const orderedVisualEvidence = getOrderedVisualEvidence(item);
 
-  // Collect all evidence images (for gallery)
+  // Collect all evidence images/files (for gallery)
   const galleryImages: { url: string; label: string }[] = [];
   const galleryFiles: {
     kind: string;
@@ -504,25 +568,42 @@ export function AuditDetail() {
       }
     });
   } else {
-    // For 911, use the images array
-    item.images.forEach((img, i) => {
-      galleryImages.push({ url: img, label: `Evidencia ${i + 1}` });
-    });
-    (item.evidencias || []).forEach((ev) => {
+    orderedVisualEvidence.forEach((ev) => {
       if (ev.kind === "image") {
         galleryImages.push({ url: ev.src, label: ev.nombre });
       } else {
         galleryFiles.push({
-          kind: ev.kind,
+          kind: "video",
           nombre: ev.nombre,
           src: ev.src,
-          transcript: ev.transcript,
         });
       }
+    });
+
+    (item.evidencias || []).forEach((ev) => {
+      if (ev.kind === "image" || ev.kind === "video") return;
+      galleryFiles.push({
+        kind: ev.kind,
+        nombre: ev.nombre,
+        src: ev.src,
+        transcript: ev.transcript,
+      });
     });
   }
 
   const totalEvidenceCount = galleryImages.length + galleryFiles.length;
+
+  const openLightbox = (startIndex: number) => {
+    if (galleryImages.length > 0) {
+      setLightboxData({
+        images: galleryImages.map((img) => img.url),
+        title: item.titulo,
+        timestamp: `${item.relativeTime} · ${item.timestamp}`,
+        description: item.descripcion,
+        startIndex,
+      });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F2F2F7] flex flex-col pb-8">
@@ -669,6 +750,45 @@ export function AuditDetail() {
                     </p>
                   )}
                 </div>
+              ) : f.kind === "video" ? (
+                <div
+                  key={`file-${i}`}
+                  className="col-span-3 rounded-xl bg-white border border-[#D1D1D6] p-3"
+                  style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-9 h-9 rounded-[8px] bg-purple-50 flex items-center justify-center">
+                      <EvidenceIcon kind={f.kind} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[13px] text-[#1C1C1E] truncate">{f.nombre}</p>
+                      <p className="text-[11px] text-[#8E8E93]">Video</p>
+                    </div>
+                  </div>
+                  {f.src ? (
+                    <div className="relative rounded-lg overflow-hidden border border-[#E5E5EA]" onClick={(e) => e.stopPropagation()}>
+                      <video
+                        controls
+                        playsInline
+                        preload="metadata"
+                        src={f.src}
+                        className="w-full bg-[#1C1C1E]"
+                      />
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                        <div
+                          className="w-12 h-12 rounded-full flex items-center justify-center"
+                          style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }}
+                        >
+                          <Play className="w-5 h-5 text-white fill-white ml-0.5" strokeWidth={1.5} />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[12px] text-[#8E8E93] italic">
+                      Video no disponible en este dispositivo.
+                    </p>
+                  )}
+                </div>
               ) : (
                 <div
                   key={`file-${i}`}
@@ -676,7 +796,7 @@ export function AuditDetail() {
                   style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
                 >
                   <div className={`w-9 h-9 rounded-[8px] flex items-center justify-center ${
-                    f.kind === "pdf" ? "bg-red-50" : f.kind === "video" ? "bg-purple-50" : "bg-gray-50"
+                    f.kind === "pdf" ? "bg-red-50" : "bg-gray-50"
                   }`}>
                     <EvidenceIcon kind={f.kind} />
                   </div>
