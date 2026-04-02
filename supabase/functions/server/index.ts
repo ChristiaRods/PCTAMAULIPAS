@@ -422,8 +422,8 @@ routePost("/push/send-test", async (c) => {
     const notifId = crypto.randomUUID();
     const notifRecord = {
       id: notifId,
-      title: "ðŸš¨ ProtecciÃ³n Civil Tamaulipas",
-      body: "Prueba de notificaciÃ³n push â€” Si ves esto, Â¡el sistema funciona correctamente!",
+      title: "Prueba de notificaciones",
+      body: "Proteccion Civil Tamaulipas: si ves este mensaje, el canal push esta activo.",
       icon: "/icon.svg",
       tag: "test-notification",
       createdAt: new Date().toISOString(),
@@ -432,8 +432,8 @@ routePost("/push/send-test", async (c) => {
     console.log(`Test notification stored: push:notif:${notifId}`);
 
     const payload: PushPayload = {
-      title: "ðŸš¨ ProtecciÃ³n Civil Tamaulipas",
-      body: "Prueba de notificaciÃ³n push â€” Si ves esto, Â¡el sistema funciona correctamente!",
+      title: "Prueba de notificaciones",
+      body: "Proteccion Civil Tamaulipas: si ves este mensaje, el canal push esta activo.",
       icon: "/icon.svg",
       badge: "/icon.svg",
       tag: "test-notification",
@@ -841,12 +841,36 @@ routePost("/reports", async (c) => {
         if (primaryText.length < 100 && transcripts.length > 1 && !primaryText.includes(transcripts[1])) {
           primaryText = `${primaryText} ${transcripts[1]}`.trim();
         }
-        const snippet = clip(primaryText);
-        const bodyText = snippet || `Nuevo reporte de ${record.tipoEmergencia || "emergencia"}.`;
+        const tipoEmergencia =
+          typeof record.tipoEmergencia === "string" && record.tipoEmergencia.trim().length > 0
+            ? clip(record.tipoEmergencia, 52)
+            : "Emergencia";
+        const prioridadRaw =
+          typeof record.prioridad === "string" ? record.prioridad.trim().toLowerCase() : "media";
+        const prioridadLabel =
+          prioridadRaw === "alta" ? "Alta" : prioridadRaw === "baja" ? "Baja" : "Media";
+        const titleText = `${tipoEmergencia} · Prioridad ${prioridadLabel}`;
+
+        const ubicacion =
+          typeof record.ubicacion === "string" ? record.ubicacion.trim() : "";
+        const municipio =
+          typeof record.municipio === "string" ? record.municipio.trim() : "";
+        const locationBase = ubicacion && municipio
+          ? ubicacion.toLowerCase().includes(municipio.toLowerCase())
+            ? ubicacion
+            : `${ubicacion}, ${municipio}`
+          : (ubicacion || municipio);
+        const locationText = clip(locationBase, 95);
+        const snippet = clip(primaryText, 130);
+        const bodyText = locationText && snippet
+          ? snippet.toLowerCase().startsWith(locationText.toLowerCase())
+            ? snippet
+            : `${locationText}. ${snippet}`
+          : (snippet || locationText || "Nuevo reporte recibido.");
 
         const notifRecord = {
           id: notifId,
-          title: "ProtecciÃ³n Civil Tamaulipas",
+          title: titleText,
           body: bodyText,
           icon: "/icon.svg",
           tag: `report-${record.id}`,
@@ -856,7 +880,7 @@ routePost("/reports", async (c) => {
         await kv.set(`push:notif:${notifId}`, notifRecord);
 
         const payload: PushPayload = {
-          title: "ProtecciÃ³n Civil Tamaulipas",
+          title: titleText,
           body: bodyText,
           icon: "/icon.svg",
           badge: "/icon.svg",

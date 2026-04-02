@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { API_BASE, apiHeaders } from "../lib/apiClient";
 
-/* ─── Types ─── */
+/* â”€â”€â”€ Types â”€â”€â”€ */
 type PushStatus =
   | "unsupported" // Browser doesn't support push
   | "denied" // User denied permission
@@ -38,7 +38,7 @@ type PushStatus =
   | "unsubscribed" // Permission granted but not subscribed
   | "subscribing" // In progress
   | "subscribed" // Active subscription
-  | "demo" // Demo mode — SW unavailable, local notifications only
+  | "demo" // Demo mode â€” SW unavailable, local notifications only
   | "error"; // Something went wrong
 
 interface StatusInfo {
@@ -99,7 +99,7 @@ const STATUS_MAP: Record<PushStatus, StatusInfo> = {
   },
 };
 
-/* ─── Push Notification Manager Component ─── */
+/* â”€â”€â”€ Push Notification Manager Component â”€â”€â”€ */
 export function PushNotificationManager() {
   const [status, setStatus] = useState<PushStatus>("prompt");
   const [errorMsg, setErrorMsg] = useState<string>("");
@@ -147,40 +147,40 @@ export function PushNotificationManager() {
     }
   }, [logs]);
 
-  /* ─── Check initial status ─── */
+  /* â”€â”€â”€ Check initial status â”€â”€â”€ */
   useEffect(() => {
     const notifSupported = "Notification" in window;
     const swSupported = "serviceWorker" in navigator;
     const pushSupported = "PushManager" in window;
 
-    addLog(`📱 Dispositivo: ${getDeviceName()}`);
-    addLog(`🌐 Host: ${window.location.hostname}`);
+    addLog(`ðŸ“± Dispositivo: ${getDeviceName()}`);
+    addLog(`ðŸŒ Host: ${window.location.hostname}`);
     addLog(
-      `📋 Soporte: Notification=${notifSupported}, SW=${swSupported}, Push=${pushSupported}`,
+      `ðŸ“‹ Soporte: Notification=${notifSupported}, SW=${swSupported}, Push=${pushSupported}`,
     );
 
     if (!notifSupported) {
       setStatus("unsupported");
-      addLog("❌ Notification API no disponible");
+      addLog("âŒ Notification API no disponible");
       return;
     }
 
     const perm = Notification.permission;
-    addLog(`📋 Permiso actual: ${perm}`);
+    addLog(`ðŸ“‹ Permiso actual: ${perm}`);
 
     if (perm === "denied") {
       setStatus("denied");
       addLog(
-        "🚫 Permisos de notificación bloqueados por el usuario",
+        "ðŸš« Permisos de notificaciÃ³n bloqueados por el usuario",
       );
       return;
     }
 
     if (!swSupported || !pushSupported) {
-      // No SW/Push support but Notification API works → demo mode
-      addLog("⚠️ Sin soporte SW/Push — activando Modo Demo");
+      // No SW/Push support but Notification API works â†’ demo mode
+      addLog("âš ï¸ Sin soporte SW/Push â€” activando Modo Demo");
       addLog(
-        "📲 Modo Demo usa notificaciones locales (sin push del servidor)",
+        "ðŸ“² Modo Demo usa notificaciones locales (sin push del servidor)",
       );
       demoModeRef.current = true;
       if (perm === "granted") {
@@ -191,16 +191,16 @@ export function PushNotificationManager() {
       return;
     }
 
-    // Full support — try to get SW
+    // Full support â€” try to get SW
     ensurePushSW(addLog)
       .then((reg) => {
         if (!reg) {
-          // SW failed → enter demo mode
+          // SW failed â†’ enter demo mode
           addLog(
-            "📲 SW no disponible en este hosting — activando Modo Demo",
+            "ðŸ“² SW no disponible en este hosting â€” activando Modo Demo",
           );
           addLog(
-            "ℹ️ Las notificaciones locales funcionan. Push real requiere hosting propio.",
+            "â„¹ï¸ Las notificaciones locales funcionan. Push real requiere hosting propio.",
           );
           demoModeRef.current = true;
           if (perm === "granted") {
@@ -215,22 +215,22 @@ export function PushNotificationManager() {
       .then((sub) => {
         if (sub) {
           setStatus("subscribed");
-          addLog("✅ Suscripción push activa encontrada");
+          addLog("âœ… SuscripciÃ³n push activa encontrada");
         } else if (!demoModeRef.current) {
           if (perm === "granted") {
             setStatus("unsubscribed");
             addLog(
-              "⚠️ Permiso concedido pero sin suscripción activa",
+              "âš ï¸ Permiso concedido pero sin suscripciÃ³n activa",
             );
           } else {
             setStatus("prompt");
-            addLog("📋 Listo para solicitar permisos");
+            addLog("ðŸ“‹ Listo para solicitar permisos");
           }
         }
       })
       .catch((err) => {
         addLog(
-          `⚠️ Error verificando SW: ${err?.message || err}`,
+          `âš ï¸ Error verificando SW: ${err?.message || err}`,
         );
         demoModeRef.current = true;
         if (perm === "granted") {
@@ -241,22 +241,22 @@ export function PushNotificationManager() {
       });
   }, [addLog]);
 
-  /* ─── Fetch subscription count ─── */
+  /* â”€â”€â”€ Fetch subscription count â”€â”€â”€ */
   useEffect(() => {
           fetch(`${API_BASE}/push/subscriptions`, { headers: apiHeaders })
       .then((r) => r.json())
       .then((data) => {
         setSubCount(data.count ?? 0);
         addLog(
-          `📊 Suscripciones en servidor: ${data.count ?? 0}`,
+          `ðŸ“Š Suscripciones en servidor: ${data.count ?? 0}`,
         );
       })
       .catch((err) =>
-        addLog(`⚠️ No se pudo obtener conteo: ${err.message}`),
+        addLog(`âš ï¸ No se pudo obtener conteo: ${err.message}`),
       );
   }, [status, addLog]);
 
-  /* ─── Subscribe (full push or demo) ─── */
+  /* â”€â”€â”€ Subscribe (full push or demo) â”€â”€â”€ */
   const subscribe = useCallback(async () => {
     setStatus("subscribing");
     setErrorMsg("");
@@ -264,33 +264,33 @@ export function PushNotificationManager() {
 
     try {
       // Step 1: Request notification permission
-      addLog("📢 Solicitando permiso de notificaciones...");
+      addLog("ðŸ“¢ Solicitando permiso de notificaciones...");
       const permission = await Notification.requestPermission();
       if (permission !== "granted") {
         setStatus(
           permission === "denied" ? "denied" : "prompt",
         );
         addLog(
-          `🚫 Permiso ${permission === "denied" ? "denegado" : "no concedido"}`,
+          `ðŸš« Permiso ${permission === "denied" ? "denegado" : "no concedido"}`,
         );
         return;
       }
-      addLog("✅ Permiso concedido");
+      addLog("âœ… Permiso concedido");
 
       // Check if we're in demo mode
       if (demoModeRef.current) {
         addLog(
-          "📲 Modo Demo activado — notificaciones locales listas",
+          "ðŸ“² Modo Demo activado â€” notificaciones locales listas",
         );
         addLog(
-          "ℹ️ Push real requiere desplegar en hosting propio (Vercel, Netlify, etc.)",
+          "â„¹ï¸ Push real requiere desplegar en hosting propio (Vercel, Netlify, etc.)",
         );
         setStatus("demo");
         return;
       }
 
       // Step 2: Ensure Service Worker is registered
-      addLog("⚙️ Registrando Service Worker para push...");
+      addLog("âš™ï¸ Registrando Service Worker para push...");
       const reg = await withTimeout(
         ensurePushSW(addLog),
         15000,
@@ -298,7 +298,7 @@ export function PushNotificationManager() {
       );
       if (!reg) {
         // Fall back to demo mode
-        addLog("📲 SW no disponible — cambiando a Modo Demo");
+        addLog("ðŸ“² SW no disponible â€” cambiando a Modo Demo");
         demoModeRef.current = true;
         setStatus("demo");
         return;
@@ -306,17 +306,17 @@ export function PushNotificationManager() {
 
       // Wait for SW to be active
       if (reg.installing || reg.waiting) {
-        addLog("⏳ Esperando activación del Service Worker...");
+        addLog("â³ Esperando activaciÃ³n del Service Worker...");
         await withTimeout(
           waitForSWActive(reg),
           10000,
-          "Timeout esperando activación del SW (10s)",
+          "Timeout esperando activaciÃ³n del SW (10s)",
         );
       }
-      addLog("✅ Service Worker activo");
+      addLog("âœ… Service Worker activo");
 
       // Step 3: Get VAPID public key from server
-      addLog("🔑 Obteniendo clave VAPID del servidor...");
+      addLog("ðŸ”‘ Obteniendo clave VAPID del servidor...");
       const vapidRes = await withTimeout(
               fetch(`${API_BASE}/push/vapid-public-key`, { headers: apiHeaders }),
         15000,
@@ -331,11 +331,11 @@ export function PushNotificationManager() {
       const { publicKey: vapidPublicKey } =
         await vapidRes.json();
       addLog(
-        `🔑 Clave VAPID: ${vapidPublicKey.slice(0, 20)}...`,
+        `ðŸ”‘ Clave VAPID: ${vapidPublicKey.slice(0, 20)}...`,
       );
 
       // Step 4: Subscribe via PushManager
-      addLog("📡 Creando suscripción push...");
+      addLog("ðŸ“¡ Creando suscripciÃ³n push...");
       const subscription = await withTimeout(
         reg.pushManager.subscribe({
           userVisibleOnly: true,
@@ -343,15 +343,15 @@ export function PushNotificationManager() {
             urlBase64ToUint8Array(vapidPublicKey),
         }),
         15000,
-        "Timeout creando suscripción push (15s)",
+        "Timeout creando suscripciÃ³n push (15s)",
       );
-      addLog("📡 Suscripción creada exitosamente");
+      addLog("ðŸ“¡ SuscripciÃ³n creada exitosamente");
       addLog(
-        `📡 Endpoint: ...${subscription.endpoint.slice(-40)}`,
+        `ðŸ“¡ Endpoint: ...${subscription.endpoint.slice(-40)}`,
       );
 
       // Step 5: Send subscription to server
-      addLog("💾 Guardando suscripción en servidor...");
+      addLog("ðŸ’¾ Guardando suscripciÃ³n en servidor...");
       const deviceName = getDeviceName();
       const saveRes = await withTimeout(
         fetch(`${API_BASE}/push/subscribe`, {
@@ -363,7 +363,7 @@ export function PushNotificationManager() {
           }),
         }),
         15000,
-        "Timeout guardando suscripción (15s)",
+        "Timeout guardando suscripciÃ³n (15s)",
       );
 
       if (!saveRes.ok) {
@@ -373,27 +373,27 @@ export function PushNotificationManager() {
         );
       }
 
-      addLog(`✅ Suscripción guardada para: ${deviceName}`);
+      addLog(`âœ… SuscripciÃ³n guardada para: ${deviceName}`);
       setStatus("subscribed");
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : String(err);
       setStatus("error");
       setErrorMsg(msg);
-      addLog(`❌ Error: ${msg}`);
+      addLog(`âŒ Error: ${msg}`);
     }
   }, [addLog]);
 
-  /* ─── Unsubscribe ─── */
+  /* â”€â”€â”€ Unsubscribe â”€â”€â”€ */
   const unsubscribe = useCallback(async () => {
     try {
       if (demoModeRef.current) {
-        addLog("🔄 Desactivando modo demo...");
+        addLog("ðŸ”„ Desactivando modo demo...");
         setStatus("unsubscribed");
         return;
       }
 
-      addLog("🔄 Desuscribiendo...");
+      addLog("ðŸ”„ Desuscribiendo...");
       const reg = await ensurePushSW(addLog);
       if (!reg) {
         setStatus("unsubscribed");
@@ -411,18 +411,18 @@ export function PushNotificationManager() {
           }),
         }).catch(() => {});
         await subscription.unsubscribe();
-        addLog("✅ Suscripción eliminada");
+        addLog("âœ… SuscripciÃ³n eliminada");
       }
 
       setStatus("unsubscribed");
     } catch (err) {
       addLog(
-        `❌ Error al desuscribir: ${err instanceof Error ? err.message : String(err)}`,
+        `âŒ Error al desuscribir: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }, [addLog]);
 
-  /* ─── Send local notification (demo mode) ─── */
+  /* â”€â”€â”€ Send local notification (demo mode) â”€â”€â”€ */
   const sendLocalNotification = useCallback(
     (title: string, body: string) => {
       try {
@@ -462,37 +462,34 @@ export function PushNotificationManager() {
     [],
   );
 
-  /* ─── Send test notification ─── */
+  /* â”€â”€â”€ Send test notification â”€â”€â”€ */
   const sendTest = useCallback(async () => {
     setSendingTest(true);
     setTestResult(null);
 
     if (demoModeRef.current) {
-      addLog("🚀 Enviando notificación local de prueba...");
+      addLog("ðŸš€ Enviando notificaciÃ³n local de prueba...");
       // Small delay to feel more realistic
       await new Promise((r) => setTimeout(r, 500));
-      const ok = sendLocalNotification(
-        "🔔 Protección Civil Tamaulipas",
-        "Notificación de prueba desde Modo Demo — el sistema funciona correctamente.",
-      );
+      const ok = sendLocalNotification("Prueba de notificaciones", "Proteccion Civil Tamaulipas: si ves este mensaje, el canal local esta activo.");
       if (ok) {
         setTestResult({
           success: true,
-          message: "✅ Notificación local enviada",
+          message: "âœ… NotificaciÃ³n local enviada",
         });
-        addLog("✅ Notificación local mostrada exitosamente");
+        addLog("âœ… NotificaciÃ³n local mostrada exitosamente");
       } else {
         setTestResult({
           success: false,
-          message: "❌ No se pudo mostrar la notificación",
+          message: "âŒ No se pudo mostrar la notificaciÃ³n",
         });
-        addLog("❌ Error mostrando notificación local");
+        addLog("âŒ Error mostrando notificaciÃ³n local");
       }
       setSendingTest(false);
       return;
     }
 
-    addLog("🚀 Enviando notificación push de prueba...");
+    addLog("ðŸš€ Enviando notificaciÃ³n push de prueba...");
     try {
       const res = await fetch(`${API_BASE}/push/send-test`, {
         method: "POST",
@@ -504,41 +501,37 @@ export function PushNotificationManager() {
       if (data.sent > 0) {
         setTestResult({
           success: true,
-          message: `✅ Enviada a ${data.sent} dispositivo(s)`,
+          message: `âœ… Enviada a ${data.sent} dispositivo(s)`,
         });
         addLog(
-          `✅ Push enviado: ${data.sent}/${data.total} exitosos`,
+          `âœ… Push enviado: ${data.sent}/${data.total} exitosos`,
         );
       } else {
         setTestResult({
           success: false,
           message:
             data.error ||
-            `Falló el envío. ${data.errors?.[0]?.error || ""}`,
+            `FallÃ³ el envÃ­o. ${data.errors?.[0]?.error || ""}`,
         });
         addLog(
-          `❌ Fallo: ${data.error || JSON.stringify(data.errors?.[0])}`,
+          `âŒ Fallo: ${data.error || JSON.stringify(data.errors?.[0])}`,
         );
       }
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : String(err);
       setTestResult({ success: false, message: msg });
-      addLog(`❌ Error de red: ${msg}`);
+      addLog(`âŒ Error de red: ${msg}`);
     } finally {
       setSendingTest(false);
     }
   }, [addLog, sendLocalNotification]);
 
-  /* ─── Send custom notification ─── */
-  const [customTitle, setCustomTitle] = useState(
-    "⚠️ Alerta Meteorológica",
-  );
-  const [customBody, setCustomBody] = useState(
-    "Se prevén lluvias intensas en zona sur de Tamaulipas. Active protocolo preventivo.",
-  );
+  /* â”€â”€â”€ Send custom notification â”€â”€â”€ */
+  const [customTitle, setCustomTitle] = useState("Alerta meteorologica");
+  const [customBody, setCustomBody] = useState("Se preven lluvias intensas en zona sur de Tamaulipas. Active protocolo preventivo.");
 
-  /* ─── File attachment state ─── */
+  /* â”€â”€â”€ File attachment state â”€â”€â”€ */
   const [attachedFile, setAttachedFile] = useState<File | null>(
     null,
   );
@@ -553,12 +546,12 @@ export function PushNotificationManager() {
       const file = e.target.files?.[0];
       if (!file) return;
       if (file.size > 5 * 1024 * 1024) {
-        addLog("❌ Archivo demasiado grande (máx 5MB)");
+        addLog("âŒ Archivo demasiado grande (mÃ¡x 5MB)");
         return;
       }
       setAttachedFile(file);
       addLog(
-        `📎 Archivo seleccionado: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`,
+        `ðŸ“Ž Archivo seleccionado: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`,
       );
       // Generate preview for images
       if (file.type.startsWith("image/")) {
@@ -578,14 +571,14 @@ export function PushNotificationManager() {
   const removeAttachedFile = useCallback(() => {
     setAttachedFile(null);
     setAttachedPreview(null);
-    addLog("📎 Archivo adjunto eliminado");
+    addLog("ðŸ“Ž Archivo adjunto eliminado");
   }, [addLog]);
 
   const sendCustom = useCallback(async () => {
     setSendingTest(true);
     setTestResult(null);
     addLog(
-      `🚀 Enviando: "${customTitle}"${attachedFile ? ` + 📎 ${attachedFile.name}` : ""}`,
+      `ðŸš€ Enviando: "${customTitle}"${attachedFile ? ` + ðŸ“Ž ${attachedFile.name}` : ""}`,
     );
 
     if (demoModeRef.current) {
@@ -594,15 +587,15 @@ export function PushNotificationManager() {
       if (ok) {
         setTestResult({
           success: true,
-          message: "✅ Notificación local enviada",
+          message: "âœ… NotificaciÃ³n local enviada",
         });
-        addLog("✅ Notificación local personalizada mostrada");
+        addLog("âœ… NotificaciÃ³n local personalizada mostrada");
       } else {
         setTestResult({
           success: false,
-          message: "❌ No se pudo mostrar",
+          message: "âŒ No se pudo mostrar",
         });
-        addLog("❌ Error mostrando notificación local");
+        addLog("âŒ Error mostrando notificaciÃ³n local");
       }
       setSendingTest(false);
       return;
@@ -616,7 +609,7 @@ export function PushNotificationManager() {
 
       if (attachedFile) {
         setUploading(true);
-        addLog(`📤 Subiendo archivo: ${attachedFile.name}...`);
+        addLog(`ðŸ“¤ Subiendo archivo: ${attachedFile.name}...`);
 
         const formData = new FormData();
         formData.append("file", attachedFile);
@@ -644,7 +637,7 @@ export function PushNotificationManager() {
         attachmentUrl = uploadData.url;
         attachmentName = uploadData.fileName;
         attachmentType = uploadData.fileType;
-        addLog(`✅ Archivo subido: ${attachmentName}`);
+        addLog(`âœ… Archivo subido: ${attachmentName}`);
       }
 
       // Step 2: Send notification with attachment info
@@ -666,10 +659,10 @@ export function PushNotificationManager() {
       if (data.sent > 0) {
         setTestResult({
           success: true,
-          message: `✅ Enviada a ${data.sent} dispositivo(s)${attachmentUrl ? " con adjunto" : ""}`,
+          message: `âœ… Enviada a ${data.sent} dispositivo(s)${attachmentUrl ? " con adjunto" : ""}`,
         });
         addLog(
-          `✅ Custom push enviado: ${data.sent}/${data.total}`,
+          `âœ… Custom push enviado: ${data.sent}/${data.total}`,
         );
         // Clear file after successful send
         setAttachedFile(null);
@@ -677,17 +670,17 @@ export function PushNotificationManager() {
       } else {
         setTestResult({
           success: false,
-          message: data.error || "Falló el envío",
+          message: data.error || "FallÃ³ el envÃ­o",
         });
         addLog(
-          `❌ Fallo: ${data.error || JSON.stringify(data.errors)}`,
+          `âŒ Fallo: ${data.error || JSON.stringify(data.errors)}`,
         );
       }
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : String(err);
       setTestResult({ success: false, message: msg });
-      addLog(`❌ Error: ${msg}`);
+      addLog(`âŒ Error: ${msg}`);
       setUploading(false);
     } finally {
       setSendingTest(false);
@@ -778,21 +771,21 @@ export function PushNotificationManager() {
               </div>
               <p className="text-[13px] text-[#8E8E93]">
                 {status === "subscribed" &&
-                  "Las notificaciones llegarán a este dispositivo"}
+                  "Las notificaciones llegarÃ¡n a este dispositivo"}
                 {status === "prompt" &&
-                  "Toca el botón para activar notificaciones"}
+                  "Toca el botÃ³n para activar notificaciones"}
                 {status === "denied" &&
                   "Ve a ajustes del navegador para desbloquear"}
                 {status === "unsupported" &&
                   "Tu navegador no soporta push notifications"}
                 {status === "unsubscribed" &&
-                  "Permiso concedido, falta activar la suscripción"}
+                  "Permiso concedido, falta activar la suscripciÃ³n"}
                 {status === "subscribing" &&
-                  "Configurando la conexión push..."}
+                  "Configurando la conexiÃ³n push..."}
                 {isDemo &&
-                  "Notificaciones locales activas — push requiere hosting propio"}
+                  "Notificaciones locales activas â€” push requiere hosting propio"}
                 {status === "error" &&
-                  (errorMsg || "Ocurrió un error inesperado")}
+                  (errorMsg || "OcurriÃ³ un error inesperado")}
               </p>
             </div>
             {subCount !== null && (
@@ -887,7 +880,7 @@ export function PushNotificationManager() {
                 className="text-[13px] text-[#1C1C1E]"
                 style={{ fontWeight: 600, lineHeight: 1.4 }}
               >
-                Modo Demo — Service Worker no detectado
+                Modo Demo â€” Service Worker no detectado
               </p>
               <p
                 className="text-[12px] text-[#8E8E93] mt-1"
@@ -898,7 +891,7 @@ export function PushNotificationManager() {
                 <span style={{ fontWeight: 600 }}>
                   /push-handler.js
                 </span>{" "}
-                esté accesible en tu dominio. Las notificaciones
+                estÃ© accesible en tu dominio. Las notificaciones
                 de prueba se muestran localmente con{" "}
                 <span style={{ fontWeight: 600 }}>
                   new Notification()
@@ -912,7 +905,7 @@ export function PushNotificationManager() {
 
       {expanded && (
         <>
-          {/* ─── Test Section ─── */}
+          {/* â”€â”€â”€ Test Section â”€â”€â”€ */}
           {canTest && (
             <div className="px-4 pb-3">
               {/* Quick test */}
@@ -929,7 +922,7 @@ export function PushNotificationManager() {
                     className="text-[15px] text-[#1C1C1E]"
                     style={{ fontWeight: 600 }}
                   >
-                    Prueba Rápida
+                    Prueba RÃ¡pida
                   </p>
                   {isDemo && (
                     <span
@@ -967,8 +960,8 @@ export function PushNotificationManager() {
                   {sendingTest
                     ? "Enviando..."
                     : isDemo
-                      ? "Enviar Notificación Local"
-                      : "Enviar Notificación de Prueba"}
+                      ? "Enviar NotificaciÃ³n Local"
+                      : "Enviar NotificaciÃ³n de Prueba"}
                 </button>
 
                 {testResult && (
@@ -1023,7 +1016,7 @@ export function PushNotificationManager() {
                     className="text-[15px] text-[#1C1C1E]"
                     style={{ fontWeight: 600 }}
                   >
-                    Notificación Personalizada
+                    NotificaciÃ³n Personalizada
                   </p>
                   {isDemo && (
                     <span
@@ -1044,7 +1037,7 @@ export function PushNotificationManager() {
                     onChange={(e) =>
                       setCustomTitle(e.target.value)
                     }
-                    placeholder="Título"
+                    placeholder="TÃ­tulo"
                     className="w-full px-3 py-2.5 rounded-xl text-[15px] text-[#1C1C1E] placeholder:text-[#C7C7CC] outline-none"
                     style={{
                       background: "#F2F2F7",
@@ -1066,7 +1059,7 @@ export function PushNotificationManager() {
                   />
                 </div>
 
-                {/* ─── Attachment area ─── */}
+                {/* â”€â”€â”€ Attachment area â”€â”€â”€ */}
                 <div className="mb-3">
                   <input
                     type="file"
@@ -1077,7 +1070,7 @@ export function PushNotificationManager() {
                   />
 
                   {!attachedFile ? (
-                    /* No file — show attach button */
+                    /* No file â€” show attach button */
                     <button
                       onClick={() =>
                         fileInputRef.current?.click()
@@ -1097,7 +1090,7 @@ export function PushNotificationManager() {
                       </span>
                     </button>
                   ) : (
-                    /* File attached — show preview card */
+                    /* File attached â€” show preview card */
                     <div
                       className="rounded-xl overflow-hidden"
                       style={{
@@ -1216,7 +1209,7 @@ export function PushNotificationManager() {
             </div>
           )}
 
-          {/* ─── Debug Log ─── */}
+          {/* â”€â”€â”€ Debug Log â”€â”€â”€ */}
           <div className="px-4 pb-3">
             <button
               onClick={() => setLogModalOpen(true)}
@@ -1250,7 +1243,7 @@ export function PushNotificationManager() {
         </>
       )}
 
-      {/* ═══ FULLSCREEN LOG MODAL ═══ */}
+      {/* â•â•â• FULLSCREEN LOG MODAL â•â•â• */}
       {logModalOpen && (
         <div
           className="fixed inset-0 flex flex-col"
@@ -1392,7 +1385,7 @@ export function PushNotificationManager() {
   );
 }
 
-/* ─── Helpers ─── */
+/* â”€â”€â”€ Helpers â”€â”€â”€ */
 function urlBase64ToUint8Array(
   base64String: string,
 ): Uint8Array {
@@ -1428,32 +1421,32 @@ async function ensurePushSW(
   addLog: (msg: string) => void,
 ): Promise<ServiceWorkerRegistration | null> {
   try {
-    addLog("🔍 Buscando Service Workers existentes...");
+    addLog("ðŸ” Buscando Service Workers existentes...");
     const existingRegs =
       await navigator.serviceWorker.getRegistrations();
     addLog(
-      `🔍 Encontrados: ${existingRegs.length} registros SW`,
+      `ðŸ” Encontrados: ${existingRegs.length} registros SW`,
     );
 
     // If there's already an active SW, use it immediately
     for (const reg of existingRegs) {
       if (reg.active) {
         addLog(
-          `✅ SW activo encontrado: ${reg.active.scriptURL.split("/").pop()}`,
+          `âœ… SW activo encontrado: ${reg.active.scriptURL.split("/").pop()}`,
         );
         return reg;
       }
     }
 
-    // Use navigator.serviceWorker.ready — resolves when VitePWA's SW activates
+    // Use navigator.serviceWorker.ready â€” resolves when VitePWA's SW activates
     addLog(
-      "⏳ Esperando SW activo (navigator.serviceWorker.ready)...",
+      "â³ Esperando SW activo (navigator.serviceWorker.ready)...",
     );
 
     const readyPromise = navigator.serviceWorker.ready.then(
       (reg) => {
         addLog(
-          `✅ SW ready: ${reg.active?.scriptURL.split("/").pop() || "unknown"}`,
+          `âœ… SW ready: ${reg.active?.scriptURL.split("/").pop() || "unknown"}`,
         );
         return reg;
       },
@@ -1469,9 +1462,9 @@ async function ensurePushSW(
     ]);
     if (readyResult) return readyResult;
 
-    // Timeout — try manual registration with /push-handler.js
+    // Timeout â€” try manual registration with /push-handler.js
     addLog(
-      "⏳ Timeout, intentando registro manual /push-handler.js...",
+      "â³ Timeout, intentando registro manual /push-handler.js...",
     );
     try {
       const reg = await navigator.serviceWorker.register(
@@ -1479,7 +1472,7 @@ async function ensurePushSW(
         { scope: "/" },
       );
       addLog(
-        `📥 Registro push-handler.js (state: ${reg.installing?.state || reg.waiting?.state || reg.active?.state || "unknown"})`,
+        `ðŸ“¥ Registro push-handler.js (state: ${reg.installing?.state || reg.waiting?.state || reg.active?.state || "unknown"})`,
       );
 
       if (reg.active) return reg;
@@ -1505,12 +1498,12 @@ async function ensurePushSW(
       });
 
       if (reg.active) {
-        addLog("✅ Service Worker registrado y activo");
+        addLog("âœ… Service Worker registrado y activo");
         return reg;
       }
     } catch (swErr) {
       addLog(
-        `❌ Error registrando /push-handler.js: ${swErr instanceof Error ? swErr.message : String(swErr)}`,
+        `âŒ Error registrando /push-handler.js: ${swErr instanceof Error ? swErr.message : String(swErr)}`,
       );
     }
 
@@ -1518,7 +1511,7 @@ async function ensurePushSW(
   } catch (err) {
     console.error("[Push] Error ensuring SW:", err);
     addLog(
-      `❌ Error SW: ${err instanceof Error ? err.message : String(err)}`,
+      `âŒ Error SW: ${err instanceof Error ? err.message : String(err)}`,
     );
     return null;
   }
@@ -1564,3 +1557,4 @@ async function withTimeout<T>(
     ),
   ]);
 }
+

@@ -1,7 +1,7 @@
 {
-  "name": "Protección Civil Tamaulipas",
+  "name": "Proteccion Civil Tamaulipas",
   "short_name": "PC Tamaulipas",
-  "description": "App Operativa de Protección Civil del Estado de Tamaulipas",
+  "description": "App Operativa de Proteccion Civil del Estado de Tamaulipas",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -47,3 +47,4 @@
     }
   ]
 }
+

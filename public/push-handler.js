@@ -3,25 +3,25 @@
  * Works both as standalone SW and as importScript in VitePWA's workbox SW
  */
 
-/* ─── Install — Activate immediately ─── */
+/* â”€â”€â”€ Install â€” Activate immediately â”€â”€â”€ */
 self.addEventListener("install", (event) => {
   console.log("[Push SW] Installing...");
   self.skipWaiting();
 });
 
-/* ─── Activate — Claim all clients immediately ─── */
+/* â”€â”€â”€ Activate â€” Claim all clients immediately â”€â”€â”€ */
 self.addEventListener("activate", (event) => {
   console.log("[Push SW] Activating...");
   event.waitUntil(self.clients.claim());
 });
 
-/* ─── Push Event — Received push from server ─── */
+/* â”€â”€â”€ Push Event â€” Received push from server â”€â”€â”€ */
 self.addEventListener("push", (event) => {
   console.log("[Push SW] Push received:", event);
 
   let data = {
-    title: "Protección Civil Tamaulipas",
-    body: "Nueva notificación",
+    title: "Proteccion Civil Tamaulipas",
+    body: "Nueva alerta operativa",
     icon: "/icon.svg",
     badge: "/icon.svg",
     tag: "pc-tamaulipas",
@@ -60,7 +60,7 @@ self.addEventListener("push", (event) => {
   );
 });
 
-/* ─── Notification Click — Open the app ─── */
+/* â”€â”€â”€ Notification Click â€” Open the app â”€â”€â”€ */
 self.addEventListener("notificationclick", (event) => {
   console.log("[Push SW] Notification click:", event.action);
   event.notification.close();
@@ -85,15 +85,15 @@ self.addEventListener("notificationclick", (event) => {
           return client.focus();
         }
       }
-      // App not open — open with deep link URL
+      // App not open â€” open with deep link URL
       return self.clients.openWindow(urlToOpen);
     })
   );
 });
 
-/* ─── Push Subscription Change ─── */
+/* â”€â”€â”€ Push Subscription Change â”€â”€â”€ */
 self.addEventListener("pushsubscriptionchange", (event) => {
   console.log("[Push SW] Push subscription changed");
 });
 
-console.log("[Push SW] Push handler loaded ✓");
+console.log("[Push SW] Push handler loaded âœ“");
